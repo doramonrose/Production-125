@@ -1,0 +1,161 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    [x-cloak] {
+        display: none !important;
+    }
+
+    html,
+    body {
+        font-family: 'K2D', ui-sans-serif, system-ui, sans-serif;
+    }
+}
+
+@layer components {
+    .budget-page-section {
+        @apply mx-4 rounded-2xl bg-white p-6 shadow-xl shadow-slate-200/60;
+    }
+
+    .budget-page-section + .budget-page-section {
+        @apply mt-4;
+    }
+
+    .budget-page-header {
+        @apply flex flex-col gap-3 md:flex-row md:items-center md:justify-between;
+    }
+
+    .budget-page-heading {
+        @apply text-xl font-bold text-slate-700;
+    }
+
+    .budget-page-description {
+        @apply mt-2 text-sm text-slate-500;
+    }
+
+    .budget-toolbar {
+        @apply flex flex-wrap items-center gap-2;
+    }
+
+    .budget-toolbar-button {
+        @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wide text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg;
+    }
+
+    .budget-toolbar-button--primary {
+        @apply bg-gradient-to-tl from-blue-600 to-green-500;
+    }
+
+    .budget-toolbar-button--success {
+        @apply bg-gradient-to-tl from-teal-600 to-emerald-500;
+    }
+
+    .budget-toolbar-button--neutral {
+        @apply bg-gradient-to-tl from-slate-700 to-slate-500;
+    }
+
+    .budget-modal-actions {
+        @apply mt-2 flex flex-wrap justify-end gap-2;
+    }
+
+    .budget-form-label {
+        @apply mb-1 block text-xs font-bold text-slate-700;
+    }
+
+    .budget-form-input {
+        @apply w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-slate-700 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20;
+    }
+
+    .budget-form-select {
+        @apply w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-slate-700 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20;
+    }
+
+    .budget-form-textarea {
+        @apply w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-slate-700 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20;
+    }
+
+    .budget-table-wrap {
+        @apply overflow-x-auto;
+    }
+
+    .budget-table {
+        @apply w-full table-auto text-sm;
+    }
+
+    .budget-table thead tr {
+        @apply border-b border-slate-200 text-left text-[0.72rem] font-bold uppercase tracking-wide text-slate-500;
+    }
+
+    .budget-table th {
+        @apply px-3 py-3;
+    }
+
+    .budget-table td {
+        @apply px-3 py-3 align-top text-slate-700;
+    }
+
+    .budget-table tbody tr {
+        @apply border-b border-slate-100 transition-colors hover:bg-slate-50/70;
+    }
+
+    .budget-table tbody tr:last-child {
+        @apply border-b-0;
+    }
+
+    .budget-table-compact th,
+    .budget-table-compact td {
+        @apply px-2 py-2;
+    }
+
+    .budget-stat-grid {
+        @apply grid grid-cols-1 gap-4 md:grid-cols-3;
+    }
+
+    .budget-stat-card {
+        @apply rounded-xl border border-slate-200 bg-slate-50/60 p-4;
+    }
+
+    .budget-stat-label {
+        @apply text-xs font-medium text-slate-500;
+    }
+
+    .budget-stat-value {
+        @apply text-lg font-bold text-slate-700;
+    }
+
+    .budget-action-link {
+        @apply inline-flex items-center text-sm font-semibold transition-colors;
+    }
+
+    .budget-action-link--primary {
+        @apply text-blue-600 hover:text-blue-700;
+    }
+
+    .budget-action-link--success {
+        @apply text-green-600 hover:text-green-700;
+    }
+
+    .budget-action-link--warning {
+        @apply text-amber-600 hover:text-amber-700;
+    }
+
+    .budget-action-link--danger {
+        @apply text-red-600 hover:text-red-700;
+    }
+
+    .budget-status-badge {
+        @apply inline-flex rounded-full px-2.5 py-1 text-xs font-semibold;
+    }
+
+    .budget-status-badge--active {
+        @apply bg-green-100 text-green-700;
+    }
+
+    .budget-status-badge--inactive {
+        @apply bg-slate-100 text-slate-500;
+    }
+
+    .budget-empty-state {
+        @apply px-3 py-6 text-center text-slate-400;
+    }
+}

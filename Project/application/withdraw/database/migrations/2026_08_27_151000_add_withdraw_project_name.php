@@ -1,0 +1,36 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        if (! Schema::hasTable('withdraw')) {
+            return;
+        }
+        if (Schema::hasColumn('withdraw', 'withdraw_project_name')) {
+            return;
+        }
+
+        Schema::table('withdraw', function (Blueprint $table) {
+            $table->string('withdraw_project_name', 500)->nullable()->after('withdraw_project_code');
+        });
+    }
+
+    public function down(): void
+    {
+        if (! Schema::hasTable('withdraw')) {
+            return;
+        }
+        if (! Schema::hasColumn('withdraw', 'withdraw_project_name')) {
+            return;
+        }
+
+        Schema::table('withdraw', function (Blueprint $table) {
+            $table->dropColumn('withdraw_project_name');
+        });
+    }
+};

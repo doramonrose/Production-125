@@ -1,0 +1,2536 @@
+/* ePROJECT brand theme — #926cb8 + K2D
+   โหลดหลัง ace.css เพื่อทับโทนโดยไม่แก้เทมเพลตต้นทาง */
+
+:root{
+	--pm-brand: #926cb8;
+	--pm-brand-dark: #734d96;
+	--pm-brand-deep: #5c3d7a;
+	--pm-brand-soft: #f3eef8;
+	--pm-brand-soft-2: #e8def2;
+	--pm-brand-line: rgba(146, 108, 184, .32);
+	--pm-brand-ink: #4a3263;
+	--pm-page: #ffffff;
+	--pm-card: #ffffff;
+	--pm-text: #2b2433;
+	--pm-muted: #6b6174;
+	--pm-border: #e6ddee;
+	--pm-radius: .7rem;
+	--pm-font: "K2D", "Kanit", "Segoe UI", sans-serif;
+	--pm-side: #734d96;
+	--pm-side-hi: #926cb8;
+	--pm-side-deep: #5c3d7a;
+	--pm-side-active: #7faf58;
+	--pm-side-active-ink: #2f5a1c;
+	--pm-side-pink: #ffffff;
+	--pm-side-gold: #ffffff;
+	--pm-side-logout: #7a4aa6;
+	--pm-side-logout-2: #5c3d7a;
+}
+
+/* UI ทั้งระบบเล็กลงนิดเดียว — บันทึกข้อความ TH Sarabun ใช้ pt จึงไม่ถูกย่อ */
+html{
+	font-size: 15px;
+}
+body.pm-theme{
+	font-size: 1rem;
+}
+
+html, body,
+body.pm-theme{
+	font-family: var(--pm-font) !important;
+	color: var(--pm-text);
+}
+
+body.pm-theme,
+body{
+	background-color: var(--pm-page) !important;
+}
+
+body.pm-theme footer.footer,
+body.pm-theme .footer-fixed .footer-inner{
+	display: none !important;
+	height: 0 !important;
+	visibility: hidden !important;
+}
+
+body.pm-theme .main-content,
+body.pm-theme .page-content,
+body.pm-theme .page-content-inner,
+body.pm-theme .main-content .page-content{
+	background-color: #fff !important;
+	min-width: 0;
+	max-width: 100%;
+}
+
+h1, h2, h3, h4, h5, h6,
+.card-title, .navbar, .sidebar,
+.btn, .form-control, .dropdown-menu,
+.modal, .alert, .badge, table, label{
+	font-family: var(--pm-font);
+}
+
+/* ----- ปุ่มหลัก: ม่วง (คง danger/warning/success) ----- */
+.btn-primary,
+.btn-primary:not(:disabled):not(.disabled).active,
+.btn-primary:not(:disabled):not(.disabled):active,
+.show > .btn-primary.dropdown-toggle{
+	background-color: var(--pm-brand) !important;
+	border-color: var(--pm-brand) !important;
+	color: #fff !important;
+	box-shadow: 0 8px 18px -12px rgba(146, 108, 184, .75);
+}
+.btn-primary:hover,
+.btn-primary:focus{
+	background-color: var(--pm-brand-dark) !important;
+	border-color: var(--pm-brand-dark) !important;
+	color: #fff !important;
+}
+.btn-outline-primary{
+	color: var(--pm-brand) !important;
+	border-color: var(--pm-brand) !important;
+	background: #fff !important;
+}
+.btn-outline-primary:hover,
+.btn-outline-primary:focus{
+	background: var(--pm-brand-soft) !important;
+	color: var(--pm-brand-deep) !important;
+}
+
+/* ACE primary utilities ที่ใช้เป็นหัวข้อ/ลิงก์ */
+.text-primary,
+.text-primary-d1,
+.text-primary-d2,
+.text-primary-m1,
+.text-primary-m2{
+	color: var(--pm-brand-dark) !important;
+}
+.bgc-primary,
+.bgc-primary-d1,
+.badge-primary{
+	background-color: var(--pm-brand) !important;
+}
+.bgc-primary-l3,
+.bgc-primary-l4{
+	background-color: var(--pm-brand-soft) !important;
+}
+.brc-primary,
+.border-primary{
+	border-color: var(--pm-brand-line) !important;
+}
+
+/* Navbar / badge หัวหน้า */
+.navbar-white,
+.navbar.navbar-white{
+	background: #fff;
+}
+.navbar .badge-lg.bgc-blue-d1,
+.navbar .badge-lg.bgc-green-d1,
+.navbar .badge-lg.bgc-purple-d1,
+.navbar .badge-lg.bgc-warning-d1{
+	background: #f3eef8 !important;
+	color: #5c3d7a !important;
+	font-weight: 600;
+	box-shadow: none;
+}
+.navbar .badge-lg .bgc-primary-tp4{
+	display: none !important;
+}
+
+.navbar .pm-page-crumb{
+	display: inline-flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: .1rem .28rem;
+	font-weight: 600;
+	color: #4a3263;
+	line-height: 1.25;
+}
+.navbar .pm-page-crumb .pm-crumb-sep{
+	color: #926cb8;
+	font-weight: 500;
+	padding: 0 .12rem;
+}
+.navbar .pm-page-crumb .pm-crumb-root,
+.navbar .pm-page-crumb .pm-crumb-mid{
+	color: #4a3263;
+	font-weight: 600;
+}
+.navbar .pm-page-crumb .pm-crumb-cur{
+	color: #3b0764;
+	font-weight: 800;
+}
+
+/* โปรไฟล์มุมขวาบน (แทนกระดิ่ง) */
+.navbar .pm-nav-user{
+	display: flex;
+	align-items: center;
+	gap: .65rem;
+	margin-left: auto;
+	padding: .15rem .5rem .15rem .15rem;
+	min-width: 0;
+}
+.navbar .pm-nav-user-photo{
+	width: 40px;
+	height: 40px;
+	object-fit: cover;
+	border-radius: 50%;
+	flex-shrink: 0;
+	border: 2px solid var(--pm-brand-soft-2);
+	background: var(--pm-brand-soft);
+}
+.navbar .pm-nav-user-text{
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	line-height: 1.25;
+	min-width: 0;
+}
+.navbar .pm-nav-user-name{
+	font-weight: 700;
+	font-size: .95rem;
+	color: var(--pm-brand-ink);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 16rem;
+}
+.navbar .pm-nav-user-pos{
+	font-weight: 400;
+	font-size: .78rem;
+	color: var(--pm-brand-ink);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 16rem;
+}
+.navbar .pm-nav-logout{
+	flex-shrink: 0;
+	white-space: nowrap;
+	text-decoration: none !important;
+	font-weight: 700;
+	font-size: .78rem;
+	line-height: 1.2;
+	border-radius: 999px;
+	padding: .38rem .9rem;
+	background: var(--pm-brand-soft);
+	border: 1px solid var(--pm-brand-line);
+	color: var(--pm-brand-ink) !important;
+	box-shadow: none;
+}
+.navbar .pm-nav-logout:hover,
+.navbar .pm-nav-logout:focus{
+	background: var(--pm-brand);
+	border-color: var(--pm-brand-dark);
+	color: #fff !important;
+}
+@media (max-width: 575.98px){
+	.navbar .pm-nav-user-name,
+	.navbar .pm-nav-user-pos{
+		max-width: 8.5rem;
+	}
+	.navbar .pm-nav-logout{
+		padding: .32rem .65rem;
+		font-size: .72rem;
+	}
+}
+
+/* Sidebar: ม่วงเข้ม + เงาสะท้อน รายการที่เลือกเป็นม่วงอ่อน
+   ACE ใช้ visibility:hidden ที่ .sidebar แล้วโชว์แค่ .sidebar-inner */
+/* Sidebar: ม่วงสว่างโทนภาพที่ 2 + วาว รายการที่เลือกเป็นแคปซูลม่วงเงา */
+#sidebar.sidebar,
+#sidebar.sidebar-color,
+#sidebar.sidebar-dark,
+#sidebar .sidebar-inner,
+#sidebar.pm-sidebar .sidebar-inner{
+	background-color: #734d96 !important;
+	background-image:
+		linear-gradient(165deg, rgba(255,255,255,.28) 0%, rgba(255,255,255,.1) 22%, rgba(255,255,255,0) 48%),
+		linear-gradient(180deg, #a57cc8 0%, #926cb8 36%, #734d96 68%, #5c3d7a 100%) !important;
+	box-shadow: inset 0 1px 0 rgba(255,255,255,.4), inset -1px 0 0 rgba(255,255,255,.12), 10px 0 28px -16px rgba(90, 50, 130, .4);
+}
+#sidebar .sidebar-inner{
+	overflow: hidden;
+}
+#sidebar .sidebar-inner::before{
+	content: "";
+	position: absolute;
+	left: -35%;
+	top: -12%;
+	width: 170%;
+	height: 46%;
+	background: linear-gradient(180deg, rgba(255,255,255,.26) 0%, rgba(255,255,255,.08) 42%, transparent 100%);
+	pointer-events: none;
+	z-index: 0;
+}
+#sidebar .sidebar-inner > *{
+	position: relative;
+	z-index: 1;
+}
+#sidebar .ace-scroll,
+#sidebar .sidebar-section,
+#sidebar .sidebar-section-item{
+	background: transparent !important;
+}
+#sidebar,
+#sidebar .nav,
+#sidebar .nav-link,
+#sidebar .nav-text,
+#sidebar .navbar-brand,
+#sidebar .btn{
+	font-family: var(--pm-font) !important;
+}
+
+#sidebar-header-brand2{
+	padding: 1rem .75rem .35rem !important;
+}
+/* Desktop เมนูเต็ม: ซ่อนเฉพาะรูปโลโก้ — คงชื่อระบบบริหารโครงการ */
+@media (min-width: 1200px){
+	#sidebar .pm-side-brand-expanded,
+	#sidebar-header-brand2{
+		display: block !important;
+	}
+	#sidebar-header-brand2 .pm-side-logo-wrap{
+		display: none !important;
+	}
+}
+/* หน้าจอเล็ก / ย่อเมนู: แสดงโลโก้ได้ตามปกติ (brand1 ตอนย่อ, brand2 ตอนมือถือ) */
+@media (max-width: 1199.98px){
+	#sidebar .pm-side-brand-expanded,
+	#sidebar-header-brand2{
+		display: block !important;
+	}
+	#sidebar-header-brand2 .pm-side-logo-wrap{
+		display: flex !important;
+	}
+}
+#sidebar-header-brand1 .pm-side-brand-sm{
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 2.85rem;
+	height: 2.85rem;
+	padding: .2rem;
+	margin: .55rem auto 0;
+	background: rgba(255,255,255,.96);
+	border-radius: .9rem;
+	box-shadow:
+		0 0 0 1px rgba(255,255,255,.45),
+		0 10px 18px -12px rgba(20, 8, 40, .5);
+}
+#sidebar-header-brand2 .pm-side-brand,
+#sidebar #sidebar-header-brand2 .navbar-brand.pm-side-brand{
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: .45rem;
+	position: relative;
+	overflow: visible;
+	text-align: center;
+	line-height: 1.2;
+	width: 100%;
+	max-width: 14rem;
+	margin: 0 auto;
+	padding: 1rem .85rem .95rem;
+	border-radius: 1.15rem;
+	text-decoration: none !important;
+	background: linear-gradient(165deg, rgba(255,255,255,.97) 0%, rgba(248,244,252,.94) 100%);
+	border: 1px solid rgba(255,255,255,.55);
+	box-shadow:
+		0 1px 0 rgba(255,255,255,.7) inset,
+		0 12px 24px -16px rgba(40, 12, 70, .55);
+	transition: transform .2s ease, box-shadow .2s ease;
+}
+#sidebar-header-brand2 .pm-side-brand:hover{
+	transform: translateY(-1px);
+	box-shadow:
+		0 1px 0 rgba(255,255,255,.75) inset,
+		0 16px 28px -14px rgba(40, 12, 70, .5);
+}
+#sidebar-header-brand2 .pm-side-brand::before,
+#sidebar-header-brand2 .pm-side-brand::after{
+	display: none !important;
+	content: none !important;
+}
+#sidebar-header-brand2 .pm-side-logo-wrap{
+	position: relative;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 2.75rem;
+	height: 2.75rem;
+	overflow: hidden;
+	margin: 0;
+	border-radius: .7rem;
+	background: #fff;
+	box-shadow: 0 0 0 1px rgba(115, 77, 150, .12);
+}
+#sidebar-header-brand2 .pm-side-logo-wrap .pm-side-logo{
+	display: block;
+	width: auto !important;
+	height: 118% !important;
+	max-width: none !important;
+	margin: -8% 0 0 -6%;
+	object-fit: cover;
+	object-position: left center;
+	filter: none;
+}
+#sidebar-header-brand2 .pm-side-brand-title{
+	display: block !important;
+	visibility: visible !important;
+	position: relative;
+	z-index: 1;
+	margin: 0;
+	padding: 0 .1rem;
+	font-size: 1.05rem !important;
+	font-weight: 800 !important;
+	letter-spacing: -.01em;
+	line-height: 1.35;
+	color: #2f1a4a;
+	text-shadow: none;
+	white-space: normal;
+}
+#sidebar-header-brand1 .pm-side-logo-wrap-sm{
+	display: block;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	margin: 0;
+	border-radius: .55rem;
+}
+#sidebar-header-brand1 .pm-side-logo-wrap-sm .pm-side-logo{
+	display: block;
+	width: auto !important;
+	height: 118% !important;
+	max-width: none !important;
+	margin: -8% 0 0 -6%;
+	object-fit: cover;
+	object-position: left center;
+	filter: none;
+}
+#sidebar-header-brand2 .pm-side-brand-badge{
+	position: relative;
+	z-index: 1;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	margin: 0;
+	padding: .28rem .8rem;
+	border-radius: 999px;
+	color: #5a3d78 !important;
+	font-weight: 700;
+	font-size: .7rem;
+	letter-spacing: .06em;
+	background: rgba(146, 108, 184, .14);
+	border: 1px solid rgba(146, 108, 184, .18);
+	box-shadow: none;
+}
+
+#sidebar .nav-item-caption{
+	padding: .7rem .95rem .45rem;
+}
+#sidebar .nav-item-caption .fadeable{
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: #4a2f6d !important;
+	background: rgba(255,255,255,.92);
+	font-weight: 800;
+	font-size: .72rem;
+	letter-spacing: .14em;
+	line-height: 1.2;
+	padding: .32rem .9rem !important;
+	border-radius: 999px;
+	opacity: 1 !important;
+	text-shadow: none;
+	border: 1px solid rgba(255,255,255,.5);
+	box-shadow: 0 8px 16px -12px rgba(46, 16, 101, .45);
+}
+#sidebar .nav-item-caption .fadeinable{
+	color: #fff !important;
+	opacity: 1 !important;
+}
+
+#sidebar .nav-item.pm-nav-group-title{
+	pointer-events: none;
+	user-select: none;
+}
+#sidebar .nav-item.pm-nav-group-title > .pm-nav-group-label{
+	cursor: default;
+	font-weight: 800;
+}
+#sidebar.sidebar-color .nav > .nav-item.pm-nav-group-title > .pm-nav-group-label:hover{
+	background: transparent !important;
+}
+#sidebar.sidebar-color .nav > .nav-item.pm-nav-child > .nav-link{
+	margin: .08rem .7rem .08rem 1.35rem;
+	padding: .42rem .9rem .42rem 1.05rem !important;
+	font-size: .95rem;
+}
+#sidebar.sidebar-color .nav > .nav-item.pm-nav-child > .nav-link > .nav-icon{
+	width: 1.15rem;
+	font-size: .9em;
+	opacity: .92;
+}
+
+#sidebar.sidebar-color .nav > .nav-item > .nav-link{
+	color: #fff !important;
+	margin: .18rem .7rem .18rem 0;
+	padding: .52rem 1rem .52rem 1.15rem !important;
+	border-radius: 0 999px 999px 0;
+}
+#sidebar.sidebar-color .nav > .nav-item > .nav-link > .nav-icon{
+	color: #fff !important;
+}
+#sidebar.sidebar-color .nav > .nav-item > .nav-link:hover{
+	background: rgba(255,255,255,.12) !important;
+	color: #fff !important;
+}
+#sidebar.sidebar-color .nav > .nav-item.active > .nav-link,
+#sidebar.sidebar-color .nav > .nav-item.active.open > .nav-link{
+	position: relative;
+	overflow: hidden;
+	background:
+		linear-gradient(180deg, rgba(255,255,255,.7) 0%, rgba(255,255,255,.12) 42%, transparent 62%),
+		linear-gradient(90deg, #f3f8ee 0%, #c5ddb0 46%, #7faf58 100%) !important;
+	color: var(--pm-side-active-ink) !important;
+	box-shadow: inset 0 1px 0 #fff, inset 0 -1px 0 rgba(47, 90, 28, .1), 0 10px 18px -10px rgba(47, 90, 28, .4);
+}
+#sidebar.sidebar-color .nav > .nav-item.active > .nav-link > .nav-icon,
+#sidebar.sidebar-color .nav > .nav-item.active > .nav-link .nav-text,
+#sidebar.sidebar-color .nav > .nav-item.active > .nav-link .nav-text > span,
+#sidebar.sidebar-color .nav > .nav-item.active > .nav-link .caret{
+	color: var(--pm-side-active-ink) !important;
+}
+#sidebar.sidebar-color .nav.has-active-border .nav-item.active > .nav-link::before,
+#sidebar.sidebar-color .nav.has-active-border > .nav-item.active::before{
+	display: none !important;
+}
+#sidebar.sidebar-color .submenu{
+	background: transparent !important;
+}
+#sidebar.sidebar-color .submenu .nav-link{
+	color: #fff !important;
+	margin: .1rem .85rem .1rem .95rem;
+	border-radius: 999px;
+}
+#sidebar.sidebar-color .submenu .nav-item.active > .nav-link,
+#sidebar.sidebar-color .submenu .nav-item.active > .nav-link .nav-text,
+#sidebar.sidebar-color .submenu .nav-item.active > .nav-link .nav-text > span,
+#sidebar.sidebar-color .submenu .nav-item.active > .nav-link > .nav-icon{
+	color: var(--pm-side-active-ink) !important;
+}
+#sidebar.sidebar-color .submenu .nav-item.active > .nav-link{
+	background:
+		linear-gradient(180deg, rgba(255,255,255,.7) 0%, rgba(255,255,255,.15) 45%, transparent 70%),
+		linear-gradient(90deg, #f3f8ee 0%, #c5ddb0 100%) !important;
+	box-shadow: inset 0 1px 0 #fff, 0 8px 14px -10px rgba(47, 90, 28, .38);
+}
+#sidebar .submenu .nav-text::before,
+#sidebar .submenu .nav-item > .nav-link > .nav-text::before,
+#sidebar .submenu .nav-item.active > .nav-link > .nav-text::before,
+#sidebar .submenu .nav-item.active:not(.open) > .nav-link > .nav-text::before,
+#sidebar .submenu .nav-item > .nav-link:hover > .nav-text::before,
+#sidebar .submenu .nav-item > .nav-link:focus > .nav-text::before,
+#sidebar.sidebar-color .submenu .nav-text::before,
+#sidebar.sidebar-color .submenu .nav-item.active:not(.open) > .nav-link > .nav-text::before,
+#sidebar.sidebar-color .submenu .nav-item > .nav-link:hover > .nav-text::before,
+#sidebar #submenu-project > .submenu-inner > .nav-item.active:not(.open) > .nav-link .nav-text::before,
+#sidebar #submenu-approve .nav-text::before,
+#sidebar .nav-item .nav-item::before,
+#sidebar .nav > .nav-item > .submenu::before{
+	content: none !important;
+	display: none !important;
+	width: 0 !important;
+	height: 0 !important;
+	border: 0 !important;
+	background: none !important;
+}
+#sidebar.sidebar-color .caret,
+#sidebar.sidebar-color .nav-item > .nav-link .caret{
+	color: rgba(255,255,255,.8) !important;
+}
+
+#sidebar.sidebar-fixed .sidebar-inner{
+	position: fixed !important;
+	top: 0 !important;
+	bottom: 0 !important;
+	height: auto !important;
+	min-height: 0 !important;
+	width: 16rem !important;
+	width: var(--sidebar-width, 16rem) !important;
+	left: 0 !important;
+	right: auto !important;
+	display: flex !important;
+	flex-direction: column !important;
+}
+/* เมื่อพับแถบข้าง (hamburger) ต้องใช้ความกว้างแบบย่อ — อย่าบังคับ 16rem ค้างไว้ */
+@media (min-width: 1200px){
+	#sidebar.sidebar-fixed.expandable.collapsed .sidebar-inner{
+		width: 5rem !important;
+		width: var(--sidebar-collapsed-width, 5rem) !important;
+	}
+	#sidebar.sidebar-fixed.expandable.collapsed .sidebar-inner.is-hover:hover,
+	#sidebar.sidebar-fixed.expandable.collapsed .sidebar-inner.has-focus,
+	#sidebar.sidebar-fixed.expandable.collapsed.let-expanded .sidebar-inner:hover,
+	#sidebar.sidebar-fixed.expandable.collapsed:not(.toggling):not(.let-expanded) .sidebar-inner:hover{
+		width: 16rem !important;
+		width: var(--sidebar-width, 16rem) !important;
+	}
+}
+#sidebar .ace-scroll.flex-grow-1{
+	flex: 1 1 auto !important;
+	min-height: 0 !important;
+	overflow-y: auto !important;
+}
+#sidebar .sidebar-inner > .sidebar-section:last-child{
+	flex: 0 0 auto;
+	margin-top: auto;
+	padding: .35rem 0 .55rem;
+}
+
+#sidebar-footer{
+	border-color: rgba(255,255,255,.18) !important;
+	width: 100% !important;
+	max-width: none;
+}
+#sidebar-footer .btn,
+#sidebar-footer .btn-danger{
+	background: linear-gradient(180deg, rgba(255,255,255,.32) 0%, rgba(255,255,255,.1) 100%) !important;
+	border: 1px solid rgba(255,255,255,.42) !important;
+	color: #fff !important;
+	font-weight: 800 !important;
+	border-radius: 999px !important;
+	min-width: 11.5rem;
+	padding: .52rem 1.8rem !important;
+	box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 8px 16px -12px rgba(20, 8, 40, .55);
+}
+#sidebar-footer .btn:hover,
+#sidebar-footer .btn-danger:hover{
+	background: linear-gradient(180deg, #f7f2fb 0%, #e4d4f2 100%) !important;
+	color: var(--pm-side-active-ink) !important;
+	border-color: transparent !important;
+}
+#sidebar-footer .pm-side-switch-btn{
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: .4rem;
+	min-width: 10.5rem;
+	margin: 0 0 .55rem;
+	padding: .42rem 1.15rem;
+	border-radius: 999px;
+	border: 1px solid rgba(255,255,255,.5);
+	background: linear-gradient(180deg, rgba(255,255,255,.4) 0%, rgba(255,255,255,.16) 100%);
+	color: #fff;
+	font-weight: 700;
+	font-size: .82rem;
+	line-height: 1.2;
+	text-decoration: none;
+	box-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 8px 16px -12px rgba(20, 8, 40, .55);
+}
+#sidebar-footer .pm-side-switch-btn:hover,
+#sidebar-footer .pm-side-switch-btn:focus{
+	background: linear-gradient(180deg, #fff 0%, #eef7e6 100%);
+	color: #1f4d12;
+	border-color: transparent;
+	text-decoration: none;
+	outline: none;
+}
+#sidebar-footer .pm-side-eval-btn{
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 10.5rem;
+	padding: .42rem 1.15rem;
+	border-radius: 999px;
+	border: 1px solid rgba(255,255,255,.42);
+	background: linear-gradient(180deg, rgba(255,255,255,.32) 0%, rgba(255,255,255,.1) 100%);
+	color: #fff;
+	font-weight: 700;
+	font-size: .82rem;
+	line-height: 1.2;
+	box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 8px 16px -12px rgba(20, 8, 40, .55);
+	cursor: pointer;
+}
+#sidebar-footer .pm-side-eval-btn:hover,
+#sidebar-footer .pm-side-eval-btn:focus{
+	background: linear-gradient(180deg, #f7f2fb 0%, #e4d4f2 100%);
+	color: #2f5a1c;
+	border-color: transparent;
+	outline: none;
+}
+#sidebar-footer .pm-side-ver{
+	margin-top: .45rem;
+	color: rgba(255,255,255,.72);
+	font-size: .72rem;
+	font-weight: 600;
+	letter-spacing: .04em;
+}
+.pm-fb-modal{
+	border: 0;
+	border-radius: 1rem;
+	box-shadow: 0 22px 40px -20px rgba(36, 16, 70, .45);
+	overflow: hidden;
+	position: relative;
+}
+.pm-fb-close{
+	position: absolute;
+	top: .65rem;
+	right: .85rem;
+	z-index: 2;
+	opacity: .45;
+	font-size: 1.45rem;
+	font-weight: 400;
+}
+.pm-fb-head{ padding: 1.35rem 1.4rem .35rem; }
+.pm-fb-title{
+	margin: 0 1.4rem 0 0;
+	color: #4a3263;
+	font-weight: 800;
+	font-size: 1.12rem;
+	line-height: 1.35;
+}
+.pm-fb-sub{
+	margin: .4rem 0 0;
+	color: #6b6174;
+	font-size: .82rem;
+	line-height: 1.45;
+}
+.pm-fb-body{ padding: .85rem 1.4rem 0; }
+.pm-fb-label{
+	color: #4a3263;
+	font-weight: 800;
+	font-size: .92rem;
+	margin-bottom: .45rem;
+}
+.pm-fb-stars{
+	display: flex;
+	justify-content: center;
+	gap: .35rem;
+	margin: .15rem 0 .2rem;
+}
+.pm-fb-star{
+	border: 0;
+	background: transparent;
+	padding: .1rem .15rem;
+	color: #d1d5db;
+	font-size: 1.85rem;
+	line-height: 1;
+	cursor: pointer;
+}
+.pm-fb-star.is-on{ color: #f4b400; }
+.pm-fb-star:hover,
+.pm-fb-star:focus{ color: #f4b400; outline: none; }
+.pm-fb-scale{
+	display: flex;
+	justify-content: space-between;
+	color: #94a3b8;
+	font-size: .72rem;
+	padding: 0 .35rem;
+}
+.pm-fb-hint{
+	text-align: center;
+	color: #64748b;
+	font-size: .78rem;
+	margin: .45rem 0 .15rem;
+}
+.pm-fb-hr{
+	border: 0;
+	border-top: 1px solid #eee6f5;
+	margin: .85rem 0 .8rem;
+}
+.pm-fb-note{
+	color: #6b6174;
+	font-size: .78rem;
+	margin: -.15rem 0 .45rem;
+}
+.pm-fb-comment{
+	border-radius: .7rem !important;
+	border-color: #e6ddee !important;
+	min-height: 6.2rem;
+	resize: vertical;
+}
+.pm-fb-foot{
+	display: flex;
+	justify-content: flex-end;
+	gap: .5rem;
+	padding: 1rem 1.4rem 1.2rem;
+}
+.pm-fb-cancel{
+	background: #fff !important;
+	border: 1px solid #926cb8 !important;
+	color: #5c3d7a !important;
+	font-weight: 700 !important;
+	border-radius: .55rem !important;
+	padding: .38rem 1rem !important;
+}
+.pm-fb-submit{
+	background: #15803d !important;
+	border: 1px solid #15803d !important;
+	color: #fff !important;
+	font-weight: 700 !important;
+	border-radius: .55rem !important;
+	padding: .38rem 1.05rem !important;
+}
+.swal2-container{
+	z-index: 20000 !important;
+}
+
+/* Select2 */
+.select2-container--default .select2-selection--multiple .select2-selection__choice{
+	background-color: var(--pm-brand) !important;
+	border-color: var(--pm-brand-dark) !important;
+	color: #fff !important;
+}
+.select2-container--default .select2-results__option--highlighted[aria-selected]{
+	background-color: var(--pm-brand) !important;
+}
+
+/* ----- ฟอร์มคลีน ----- */
+.form-control,
+.ace-select,
+select.form-control,
+textarea.form-control,
+input.form-control{
+	border-radius: .55rem;
+	border-color: #ddd4e6;
+}
+.form-control:focus,
+.ace-select:focus,
+select.form-control:focus,
+textarea.form-control:focus,
+input.form-control:focus{
+	border-color: var(--pm-brand) !important;
+	box-shadow: 0 0 0 .16rem rgba(146, 108, 184, .18) !important;
+}
+
+/* หน้าโครงการใช้ความกว้างเต็มพื้นที่เนื้อหา (ไม่จำกัดด้วย container / container-plus) */
+body.pm-theme .page-content.pm-page-wide,
+body.pm-theme .page-content.container-fluid.pm-page-wide{
+	max-width: none !important;
+	width: 100% !important;
+	padding-left: 1rem !important;
+	padding-right: 1rem !important;
+}
+@media (min-width: 1200px){
+	body.pm-theme .page-content.pm-page-wide,
+	body.pm-theme .page-content.container-fluid.pm-page-wide{
+		padding-left: 1.25rem !important;
+		padding-right: 1.25rem !important;
+	}
+}
+body.pm-theme .page-content.pm-page-wide .pm-list-card{
+	margin-left: 0;
+	margin-right: 0;
+}
+
+/* การ์ดรายการทั่วไป */
+.pm-list-card{
+	border-radius: var(--pm-radius) !important;
+	border: 1px solid var(--pm-brand-soft-2) !important;
+	box-shadow: 0 10px 28px -18px rgba(74, 50, 99, .28) !important;
+	overflow: hidden;
+}
+.pm-list-card .card-header{
+	background: linear-gradient(180deg, #faf7fc 0%, var(--pm-brand-soft) 100%) !important;
+	color: var(--pm-brand-ink) !important;
+	border-bottom: 1px solid var(--pm-brand-soft-2) !important;
+}
+.pm-list-card .card-header .card-title,
+.pm-list-card .card-header .pm-appr-title,
+.pm-list-card .card-header .pm-appr-title-text{
+	color: var(--pm-brand-ink) !important;
+}
+.pm-table-wrap thead th,
+.table thead.bgc-primary-l4 th,
+.table thead.bgc-primary-l4{
+	background: var(--pm-brand-soft) !important;
+	color: var(--pm-brand-ink) !important;
+}
+body.pm-theme .table-kpi-project,
+body.pm-theme .table-kpi-project th,
+body.pm-theme .table-kpi-project td{
+	border-color: var(--pm-brand-soft-2) !important;
+}
+body.pm-theme .table-kpi-project .kpi-head-1 th,
+body.pm-theme .table-kpi-project .kpi-head-2 th,
+body.pm-theme .table-kpi-project thead th,
+body.pm-theme .pm-budget-plan-actual-table thead th,
+body.pm-theme .pm-budget-expense-report-table thead th,
+body.pm-theme .pm-budget-other-actions-table thead th,
+body.pm-theme .pm-bdext-items-table thead th,
+body.pm-theme .pm-table-wrap thead th,
+body.pm-theme #projectOverviewTable thead th,
+body.pm-theme #projectApproveTable thead th,
+body.pm-theme #modalIncludeTable thead th{
+	text-align: center !important;
+	vertical-align: middle !important;
+}
+body.pm-theme .table-kpi-project .kpi-head-1 th{
+	background: var(--pm-brand-soft) !important;
+	color: var(--pm-brand-ink) !important;
+	border-color: var(--pm-brand-soft-2) !important;
+	font-weight: 700 !important;
+}
+body.pm-theme .table-kpi-project .kpi-head-2 th{
+	background: #faf7fc !important;
+	color: var(--pm-brand-ink) !important;
+	border-color: var(--pm-brand-soft-2) !important;
+	font-weight: 600 !important;
+}
+body.pm-theme .pm-kpi-overall-success-above,
+body.pm-theme .pm-kpi-overall-success-label{
+	color: var(--pm-brand-ink) !important;
+}
+
+/* badge % พาสเทล — เข้มขึ้นนิด */
+body.pm-theme .pm-kpi-goal-trio-bar,
+body.pm-theme .pm-kpi-overall-success-bar,
+body.pm-theme .pm-activity-progress-badge,
+body.pm-theme .pm-budget-pct-badge{
+	background: #dcecc8 !important;
+	border: 1px solid #7faf58 !important;
+	color: #3d6b28 !important;
+	box-shadow: none !important;
+}
+body.pm-theme .pm-kpi-goal-trio-bar.is-exact,
+body.pm-theme .pm-kpi-goal-trio-bar.is-over,
+body.pm-theme .pm-kpi-overall-success-bar.is-exact,
+body.pm-theme .pm-kpi-overall-success-bar.is-over,
+body.pm-theme .pm-activity-progress-badge.is-exact,
+body.pm-theme .pm-activity-progress-badge.is-over,
+body.pm-theme .pm-budget-pct-badge.is-exact,
+body.pm-theme .pm-budget-pct-badge.is-over{
+	background: #dcecc8 !important;
+	border-color: #7faf58 !important;
+	color: #3d6b28 !important;
+}
+body.pm-theme .pm-kpi-goal-trio-bar.is-under,
+body.pm-theme .pm-kpi-overall-success-bar.is-under{
+	background: #fde68a !important;
+	border-color: #f59e0b !important;
+	color: #92400e !important;
+}
+body.pm-theme .pm-activity-progress-badge.is-under,
+body.pm-theme .pm-budget-pct-badge.is-under{
+	background: #ffedd5 !important;
+	border-color: #fb923c !important;
+	color: #9a3412 !important;
+}
+body.pm-theme .pm-budget-pct-badge.is-zero{
+	background: #e2e8f0 !important;
+	border-color: #94a3b8 !important;
+	color: #475569 !important;
+}
+body.pm-theme .pm-bpa-head-1 th,
+body.pm-theme .pm-budget-expense-report-table .pm-ber-head th,
+body.pm-theme .pm-budget-other-actions-table thead th{
+	background: var(--pm-brand-soft) !important;
+	color: var(--pm-brand-ink) !important;
+	border-color: var(--pm-brand-soft-2) !important;
+}
+body.pm-theme .pm-bpa-head-2 th,
+body.pm-theme .pm-budget-expense-report-table thead tr:not(.pm-ber-head) th{
+	background: #faf7fc !important;
+	color: var(--pm-brand-ink) !important;
+}
+body.pm-theme .pm-budget-plan-actual-wrap,
+body.pm-theme .pm-budget-expense-report-wrap,
+body.pm-theme .pm-budget-other-actions-wrap{
+	border-color: var(--pm-brand-soft-2) !important;
+}
+body.pm-theme .pm-budget-plan-actual-head,
+body.pm-theme .pm-budget-expense-report-head,
+body.pm-theme .pm-budget-other-actions-head{
+	background: linear-gradient(180deg, #faf7fc 0%, var(--pm-brand-soft) 100%) !important;
+	border-bottom-color: var(--pm-brand-soft-2) !important;
+}
+body.pm-theme .pm-budget-section-label{
+	color: var(--pm-brand-ink) !important;
+}
+body.pm-theme .pm-bpa-result-row td,
+body.pm-theme .pm-bpa-val-result.pm-bpa-has-val,
+body.pm-theme .pm-bpa-val-result.pm-bpa-total-cell,
+body.pm-theme .pm-bpa-val-remain,
+body.pm-theme .pm-budget-expense-report-table .pm-ber-act-row td,
+body.pm-theme .pm-budget-expense-report-table .pm-ber-total-row td{
+	background: var(--pm-brand-soft) !important;
+	color: var(--pm-brand-ink) !important;
+	border-color: var(--pm-brand-soft-2) !important;
+}
+body.pm-theme .pm-bpa-plan-row td,
+body.pm-theme .pm-budget-expense-report-table .pm-ber-item-row td{
+	background: #fff !important;
+}
+body.pm-theme .pm-ber-act-badge{
+	background: var(--pm-brand-soft-2) !important;
+	color: var(--pm-brand-ink) !important;
+}
+body.pm-theme .pm-ber-disburse-btn{
+	background: #fff !important;
+	border: 1px solid var(--pm-brand-soft-2) !important;
+	color: var(--pm-brand-dark) !important;
+	box-shadow: none !important;
+}
+body.pm-theme .pm-ber-disburse-btn:hover{
+	background: #faf7fc !important;
+	border-color: var(--pm-brand) !important;
+	color: var(--pm-brand-deep) !important;
+}
+body.pm-theme .pm-ber-confirmed-badge{
+	display: inline-flex !important;
+	align-items: center;
+	gap: .28rem;
+	padding: .12rem .5rem;
+	border-radius: .35rem;
+	font-size: .72rem;
+	font-weight: 700;
+	line-height: 1.3;
+	background: #f4f8ef !important;
+	border: 1px solid #cfe3bb !important;
+	color: #5f8a3a !important;
+	box-shadow: none !important;
+}
+body.pm-theme .pm-ber-confirmed-badge i{
+	font-size: .78rem;
+	color: #7faf58 !important;
+}
+body.pm-theme .pm-budget-table .pm-budget-activity-row td{
+	background: var(--pm-brand-soft) !important;
+	font-weight: 600 !important;
+	color: var(--pm-brand-ink) !important;
+	border-color: var(--pm-brand-soft-2) !important;
+}
+body.pm-theme .pm-budget-addbtn{
+	background: #fff !important;
+	border: 1px solid var(--pm-brand-soft-2) !important;
+	color: var(--pm-brand-dark) !important;
+	font-weight: 600 !important;
+	box-shadow: none !important;
+}
+body.pm-theme .pm-budget-addbtn:hover{
+	background: #faf7fc !important;
+	border-color: var(--pm-brand) !important;
+	color: var(--pm-brand-deep) !important;
+}
+
+/* ----- โทนร่วมกับหน้าจัดการโครงการ: แท็บ / ป้าย / ปุ่มตาราง ----- */
+.pm-group-switch{
+	background: var(--pm-brand-soft) !important;
+}
+.pm-group-btn{
+	font-weight: 600 !important;
+}
+.pm-group-btn.pm-active-draft{
+	background: #fef3c7 !important;
+	color: #92400e !important;
+	border: 1px solid #fde68a !important;
+}
+.pm-group-btn.pm-active-plan{
+	background: #dcfce7 !important;
+	color: #166534 !important;
+	border: 1px solid #bbf7d0 !important;
+}
+.pm-group-btn.pm-inactive{
+	background: #fff !important;
+	color: #4b5563 !important;
+	border: 1px solid #d1d5db !important;
+}
+
+.pm-status-badge{
+	box-shadow: none !important;
+	font-weight: 600 !important;
+	transform: none !important;
+	filter: none !important;
+	display: inline-flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	width: auto !important;
+	min-width: 12.5rem !important;
+	max-width: 16rem !important;
+	height: auto !important;
+	min-height: 2.15rem !important;
+	padding: .16rem .36rem !important;
+	font-size: .7rem !important;
+	line-height: 1.2 !important;
+	white-space: normal !important;
+	text-align: center !important;
+	box-sizing: border-box !important;
+	overflow: hidden !important;
+}
+.pm-status-badge:hover{
+	transform: none !important;
+	filter: none !important;
+}
+.pm-status-badge.pm-ab-chip{
+	justify-content: flex-start !important;
+	align-items: center !important;
+	min-width: 0 !important;
+	max-width: 18.5rem !important;
+	width: auto !important;
+	min-height: 2.45rem !important;
+	height: auto !important;
+	padding: .22rem .78rem .22rem .22rem !important;
+	gap: .42rem !important;
+	border-radius: 999px !important;
+	border-width: 1px !important;
+	border-style: solid !important;
+	text-align: left !important;
+	overflow: visible !important;
+	box-shadow: none !important;
+}
+.pm-status-badge.pm-ab-chip .pm-status-code{
+	flex: 0 0 1.85rem !important;
+	width: 1.85rem !important;
+	height: 1.85rem !important;
+	border-radius: 50% !important;
+	display: inline-flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	font-weight: 800 !important;
+	font-size: .68rem !important;
+	letter-spacing: 0 !important;
+	line-height: 1 !important;
+}
+.pm-status-badge.pm-ab-chip .pm-status-text{
+	display: flex !important;
+	flex-direction: column !important;
+	align-items: flex-start !important;
+	justify-content: center !important;
+	min-width: 0 !important;
+	line-height: 1.15 !important;
+}
+.pm-status-badge.pm-ab-chip .pm-status-title{
+	font-weight: 800 !important;
+	font-size: .74rem !important;
+	white-space: nowrap !important;
+}
+.pm-status-badge.pm-ab-chip .pm-status-sub{
+	font-weight: 600 !important;
+	font-size: .62rem !important;
+	opacity: .95 !important;
+	white-space: nowrap !important;
+}
+body.pm-theme #submitStatusBadgeTop.pm-ab-chip{
+	font-size: inherit !important;
+	min-height: 2.7rem !important;
+	padding: .28rem .95rem .28rem .28rem !important;
+}
+body.pm-theme #submitStatusBadgeTop.pm-ab-chip .pm-status-code{
+	width: 2.05rem !important;
+	height: 2.05rem !important;
+	flex-basis: 2.05rem !important;
+	font-size: .76rem !important;
+}
+body.pm-theme #submitStatusBadgeTop.pm-ab-chip .pm-status-title{
+	font-size: .86rem !important;
+}
+body.pm-theme #submitStatusBadgeTop.pm-ab-chip .pm-status-sub{
+	font-size: .7rem !important;
+}
+.pm-status-badge.pm-status-draft{ background:#fef9c3 !important; color:#854d0e !important; border-color:#fde68a !important; }
+.pm-status-badge.pm-status-plan{ background:#dcfce7 !important; color:#166534 !important; border-color:#bbf7d0 !important; }
+.pm-status-badge.pm-status-queue{ background:#f3e8ff !important; color:#6b21a8 !important; border-color:#e9d5ff !important; }
+.pm-status-badge.pm-status-unknown{ background:#f1f5f9 !important; color:#475569 !important; border-color:#e2e8f0 !important; }
+.pm-status-badge.pm-status-sent{ background:#e0f2fe !important; color:#1e40af !important; border-color:#bae6fd !important; }
+.pm-status-badge.pm-status-include_project{ background:#fce7f3 !important; color:#9d174d !important; border-color:#fbcfe8 !important; }
+.pm-status-badge.pm-status-included_plan{ background:#ccfbf1 !important; color:#0f766e !important; border-color:#99f6e4 !important; }
+.pm-status-badge.pm-status-included_blue{ background:#e0f2fe !important; color:#1e40af !important; border-color:#bae6fd !important; }
+.pm-status-badge.pm-status-approved{ background:#dcfce7 !important; color:#166534 !important; border-color:#bbf7d0 !important; }
+.pm-status-badge.pm-status-changing{ background:#ffedd5 !important; color:#9a3412 !important; border-color:#fed7aa !important; }
+.pm-status-badge.pm-status-cancel_pending{ background:#fee2e2 !important; color:#991b1b !important; border-color:#fecaca !important; }
+.pm-status-badge.pm-status-cancelled{ background:#fee2e2 !important; color:#7f1d1d !important; border-color:#fecaca !important; }
+.pm-status-badge.pm-status-midyear{ background:#f1f5f9 !important; color:#475569 !important; border-color:#e2e8f0 !important; }
+.pm-status-badge.pm-status-doing{ background:#dcfce7 !important; color:#166534 !important; border-color:#bbf7d0 !important; }
+.pm-status-badge.pm-status-operate_wait,
+.pm-status-badge.pm-status-pending{ background:#fef3c7 !important; color:#92400e !important; border-color:#fde68a !important; }
+.pm-status-badge.pm-status-report_pending{ background:#fef9c3 !important; color:#854d0e !important; border-color:#fde68a !important; }
+.pm-status-badge.pm-status-report_done,
+.pm-status-badge.pm-status-done{ background:#e0f2fe !important; color:#1e40af !important; border-color:#bae6fd !important; }
+.pm-status-badge.pm-status-returned{ background:#ffedd5 !important; color:#9a3412 !important; border-color:#fed7aa !important; }
+.pm-status-badge.pm-status-rejected{ background:#fee2e2 !important; color:#991b1b !important; border-color:#fecaca !important; }
+.pm-status-badge.pm-status-confirm_fix,
+.pm-status-badge.pm-status-consider_fix{ background:#dcfce7 !important; color:#166534 !important; border-color:#bbf7d0 !important; }
+.pm-status-badge.pm-status-a0,
+.pm-status-badge.pm-status-a1,
+.pm-status-badge.pm-status-b1{
+	background:#fff6de !important;
+	color:#c48a12 !important;
+	border-color:#f0d48a !important;
+}
+.pm-status-badge.pm-status-a0 .pm-status-code,
+.pm-status-badge.pm-status-a1 .pm-status-code,
+.pm-status-badge.pm-status-b1 .pm-status-code{
+	background:#f0c44a !important;
+	color:#7a5608 !important;
+}
+.pm-status-badge.pm-status-a2,
+.pm-status-badge.pm-status-b2{
+	background:#f4eefb !important;
+	color:#5b3a8c !important;
+	border-color:#e0d0f2 !important;
+}
+.pm-status-badge.pm-status-a2 .pm-status-code,
+.pm-status-badge.pm-status-b2 .pm-status-code{
+	background:#c4a8e4 !important;
+	color:#4a2878 !important;
+}
+.pm-status-badge.pm-status-a_fix,
+.pm-status-badge.pm-status-b_fix{
+	background:#fff1e6 !important;
+	color:#d35400 !important;
+	border-color:#f5c9a6 !important;
+}
+.pm-status-badge.pm-status-a_fix .pm-status-code{
+	background:#e67a28 !important;
+	color:#fff !important;
+}
+.pm-status-badge.pm-status-b_fix .pm-status-code{
+	background:#ef6c00 !important;
+	color:#fff !important;
+}
+.pm-status-badge.pm-status-a_reject{
+	background:#fdecec !important;
+	color:#d32f2f !important;
+	border-color:#f5c2c2 !important;
+}
+.pm-status-badge.pm-status-a_reject .pm-status-code{
+	background:#e53935 !important;
+	color:#fff !important;
+}
+.pm-status-badge.pm-status-b3{
+	background:#e8f4fc !important;
+	color:#2b8bb8 !important;
+	border-color:#c5e4f5 !important;
+}
+.pm-status-badge.pm-status-b3 .pm-status-code{
+	background:#7ec8e3 !important;
+	color:#145a78 !important;
+}
+.pm-status-badge.pm-status-b4,
+.pm-status-badge.pm-status-b4_done,
+.pm-status-badge.pm-status-b5{
+	background:#e8f6ea !important;
+	color:#2e7d32 !important;
+	border-color:#c5e6c8 !important;
+}
+.pm-status-badge.pm-status-b4 .pm-status-code,
+.pm-status-badge.pm-status-b4_done .pm-status-code,
+.pm-status-badge.pm-status-b5 .pm-status-code{
+	background:#43a047 !important;
+	color:#fff !important;
+}
+
+.pm-action-wrap .btn{
+	background: #fff !important;
+	box-shadow: none !important;
+	font-weight: 600 !important;
+}
+.pm-action-wrap .btn:hover{
+	background: #fafafa !important;
+}
+.pm-action-wrap .btn-info,
+.pm-action-wrap .btn-outline-primary{
+	background: #fff !important;
+	border-color: #e2e8f0 !important;
+	color: #64748b !important;
+}
+.pm-action-wrap .btn-warning{
+	background: #fff !important;
+	border-color: #f3e8c8 !important;
+	color: #b45309 !important;
+}
+.pm-action-wrap .btn-success{
+	background: #fff !important;
+	border-color: #ccebd6 !important;
+	color: #15803d !important;
+}
+.pm-action-wrap .btn-outline-danger,
+.pm-action-wrap .btn-danger{
+	background: #fff !important;
+	border-color: #f0d0d0 !important;
+	color: #dc2626 !important;
+}
+
+.pm-list-card table.table-striped tbody tr:nth-of-type(odd),
+.pm-list-card table.table-striped tbody tr:nth-of-type(even),
+.pm-list-card table tbody tr,
+.pm-list-card table.table-hover tbody tr:hover{
+	background: #fff !important;
+	background-color: #fff !important;
+}
+.pm-project-name{
+	font-weight: 400 !important;
+	color: #334155 !important;
+}
+.pm-project-head{
+	display: block;
+	margin-top: .12rem;
+	font-size: .72rem !important;
+	line-height: 1.3;
+	color: #64748b !important;
+	font-weight: 400 !important;
+}
+.pm-project-head i{
+	font-size: .85em;
+	opacity: .85;
+}
+.pm-manage-pager .btn.active,
+.po-overview-pager .btn.active{
+	background: var(--pm-brand) !important;
+	border-color: var(--pm-brand-dark) !important;
+	color: #fff !important;
+}
+
+.udb-welcome{
+	background: linear-gradient(135deg, #734d96 0%, #926cb8 55%, #b89ad4 100%) !important;
+	box-shadow: 0 16px 32px -20px rgba(146, 108, 184, .55) !important;
+}
+.udb-link,
+.pmdb-link{
+	color: var(--pm-brand-dark) !important;
+}
+.udb-table thead th{
+	background: var(--pm-brand-soft) !important;
+	color: var(--pm-brand-ink) !important;
+}
+.udb-admin-chip{
+	background: #f3eef8 !important;
+	color: #5c3d7a !important;
+	border-color: #e8def2 !important;
+}
+
+/* หน้าจัดการโครงการ: โทนม่วงอ่อน + การ์ดโปร่ง */
+body.pm-theme .pm-block,
+.pm-block{
+	border-color: var(--pm-brand-line);
+	border-radius: var(--pm-radius);
+	box-shadow: 0 10px 24px -22px rgba(74, 50, 99, .3);
+}
+.pm-block-title,
+.pm-section-title,
+.pm-section2-banner,
+.pm-ginfo-banner{
+	background: #fff !important;
+	border-color: var(--pm-brand-soft-2) !important;
+	color: var(--pm-brand-ink) !important;
+	font-weight: 600 !important;
+	box-shadow: none !important;
+}
+.pm-section2-banner > i,
+.pm-section2-banner > span > i,
+.pm-section2-banner > div > i,
+.pm-ginfo-banner > span > i,
+.pm-block-title > i,
+.pm-section-title > i{
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.55rem;
+	height: 1.55rem;
+	border-radius: 50%;
+	background: var(--pm-brand-soft);
+	color: var(--pm-brand);
+	font-size: .72rem;
+	margin-right: .15rem;
+}
+.pm-section2-banner .btn i,
+.pm-ginfo-banner .btn i,
+.pm-block-title .btn i,
+.pm-section-title .btn i{
+	display: inline-block;
+	width: auto;
+	height: auto;
+	border-radius: 0;
+	background: transparent !important;
+	color: inherit !important;
+	font-size: inherit;
+	margin-right: .3rem;
+	padding: 0;
+}
+.pm-hero{
+	background: #fff !important;
+	border-color: var(--pm-brand-soft-2) !important;
+	box-shadow: none !important;
+}
+.pm-hero::after{
+	display: none !important;
+}
+.btn-pm-primary{
+	background: var(--pm-brand) !important;
+	box-shadow: none !important;
+}
+.project-header-display{
+	color: var(--pm-brand-dark) !important;
+	font-weight: 700 !important;
+}
+.project-meta-pill.year{
+	background: #fff !important;
+	color: var(--pm-brand-dark) !important;
+	border-color: var(--pm-brand-soft-2) !important;
+	font-weight: 600 !important;
+}
+.project-meta-pill.ref{
+	background: #fff !important;
+	color: var(--pm-brand-ink) !important;
+	border-color: var(--pm-brand-soft-2) !important;
+	font-weight: 600 !important;
+}
+
+body.pm-theme .add-project-step-circle{
+	box-shadow: none !important;
+}
+body.pm-theme .add-project-step-circle::after{
+	display: none !important;
+}
+body.pm-theme .add-project-step-circle.done{
+	background: #f3eef8 !important;
+	color: #734d96 !important;
+	border-color: #e8def2 !important;
+	filter: none !important;
+}
+body.pm-theme .add-project-step-line.done{
+	background: #e8def2 !important;
+	box-shadow: none !important;
+}
+body.pm-theme .add-project-step-circle.pending{
+	background: #fff !important;
+	color: #94a3b8 !important;
+	border-color: #e2e8f0 !important;
+}
+body.pm-theme .add-project-step-label{
+	font-weight: 600 !important;
+	color: #64748b !important;
+}
+
+body.pm-theme .btn-pm-edit-orange,
+body.pm-theme .pm-section2-wrap .btn-section2-edit.btn-warning,
+body.pm-theme .pm-ginfo-banner .btn-warning,
+body.pm-theme .pm-section2-banner .btn-warning,
+body.pm-theme .pm-section2-banner .btn-pm-edit-orange{
+	background: #fff !important;
+	border: 1px solid #f3e8c8 !important;
+	color: #b45309 !important;
+	font-weight: 600 !important;
+	box-shadow: none !important;
+}
+body.pm-theme .pm-section2-banner .btn-primary,
+body.pm-theme .pm-ginfo-banner .btn-primary{
+	background: #fff !important;
+	border: 1px solid #e8def2 !important;
+	color: #734d96 !important;
+	font-weight: 600 !important;
+	box-shadow: none !important;
+}
+
+body.pm-theme .pm-hero-st,
+body.pm-theme #submitStatusBadgeTop,
+body.pm-theme #submitStatusBadgeBottom{
+	display: inline-flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	width: 16.5rem !important;
+	min-width: 16.5rem !important;
+	max-width: 16.5rem !important;
+	min-height: 2.65rem !important;
+	height: 2.65rem !important;
+	padding: .4rem .85rem !important;
+	font-size: .92rem !important;
+	font-weight: 600 !important;
+	line-height: 1.2 !important;
+	white-space: normal !important;
+	text-align: center !important;
+	box-sizing: border-box !important;
+	box-shadow: none !important;
+	letter-spacing: 0 !important;
+	overflow: hidden !important;
+}
+body.pm-theme #submitStatusBadgeTop.d-none,
+body.pm-theme #submitStatusBadgeBottom.d-none,
+body.pm-theme .pm-hero-st.d-none{
+	display: none !important;
+}
+body.pm-theme #submitStatusBadgeBottom{
+	display: none !important;
+}
+body.pm-theme #submitStatusBadgeTop.pm-ab-chip{
+	justify-content: flex-start !important;
+	width: auto !important;
+	min-width: 0 !important;
+	max-width: 22rem !important;
+	height: auto !important;
+	min-height: 2.7rem !important;
+	padding: .28rem .95rem .28rem .28rem !important;
+	text-align: left !important;
+	overflow: visible !important;
+}
+body.pm-theme .pm-hero-st-wait,
+body.pm-theme #submitStatusBadgeTop.pm-hero-st-wait,
+body.pm-theme #submitStatusBadgeBottom.pm-hero-st-wait{
+	background: #f3eef8 !important;
+	border: 1px solid #e8def2 !important;
+	color: #5c3d7a !important;
+}
+body.pm-theme .pm-hero-st-ok{
+	background: #dcfce7 !important;
+	border: 1px solid #bbf7d0 !important;
+	color: #166534 !important;
+}
+body.pm-theme .pm-hero-st-plan{
+	background: #e0f2fe !important;
+	border: 1px solid #bae6fd !important;
+	color: #1e40af !important;
+}
+body.pm-theme .pm-hero-st-no{
+	background: #fee2e2 !important;
+	border: 1px solid #fecaca !important;
+	color: #991b1b !important;
+}
+body.pm-theme .pm-hero-st-mid{
+	background: #f1f5f9 !important;
+	border: 1px solid #e2e8f0 !important;
+	color: #475569 !important;
+}
+body.pm-theme .pm-hero-st-a2{
+	background: #f3e8ff !important;
+	border: 1px solid #e9d5ff !important;
+	color: #6b21a8 !important;
+}
+body.pm-theme .pm-hero-st-b4{
+	background: #e0f2fe !important;
+	border: 1px solid #bae6fd !important;
+	color: #1e40af !important;
+}
+body.pm-theme .pm-hero-st-fix{
+	background: #ffedd5 !important;
+	border: 1px solid #fed7aa !important;
+	color: #9a3412 !important;
+}
+body.pm-theme .pm-title-chip{
+	border-radius: 999px !important;
+	font-weight: 700 !important;
+	font-size: .9rem !important;
+	line-height: 1.25 !important;
+	padding: .38rem .95rem !important;
+	border: 1px solid transparent;
+}
+body.pm-theme .pm-title-chip-draft{
+	background: #fef9c3 !important;
+	color: #854d0e !important;
+	border-color: #fde68a !important;
+}
+body.pm-theme .pm-title-chip-plan{
+	background: #dcfce7 !important;
+	color: #166534 !important;
+	border-color: #bbf7d0 !important;
+}
+body.pm-theme .pm-title-chip-midyear{
+	background: #f1f5f9 !important;
+	color: #475569 !important;
+	border-color: #e2e8f0 !important;
+}
+body.pm-theme .pm-result-report-pending-badge{
+	background: #fef9c3 !important;
+	color: #854d0e !important;
+	border: 1px solid #fde68a !important;
+	font-weight: 600 !important;
+}
+body.pm-theme .pm-result-report-done-badge{
+	background: #e0f2fe !important;
+	color: #1e40af !important;
+	border: 1px solid #bae6fd !important;
+	font-weight: 600 !important;
+}
+body.pm-theme .pm-change-pending-badge{
+	background: #ffedd5 !important;
+	color: #9a3412 !important;
+	border: 1px solid #fed7aa !important;
+	font-weight: 600 !important;
+}
+
+body.pm-theme .pm-block{
+	box-shadow: none !important;
+	border-color: var(--pm-brand-soft-2) !important;
+}
+body.pm-theme .pm-project-toolbar{
+	margin: 0 0 .85rem;
+}
+body.pm-theme .pm-header-doc-actions .btn{
+	font-weight: 600 !important;
+	box-shadow: none !important;
+	border-radius: .55rem !important;
+}
+body.pm-theme .pm-btn-print,
+body.pm-theme #btnPrintProject,
+body.pm-theme #pmAmPrintBtn,
+body.pm-theme #pmChgAmPrintBtn,
+body.pm-theme .pm-header-doc-actions .pm-btn-print,
+body.pm-theme .pm-header-doc-actions #btnPrintProject{
+	background: #eef6fb !important;
+	border: 1px solid #b7d3e8 !important;
+	color: #4f8eb3 !important;
+	font-weight: 600 !important;
+	box-shadow: none !important;
+	border-radius: .55rem !important;
+}
+body.pm-theme .pm-btn-print:hover,
+body.pm-theme #btnPrintProject:hover,
+body.pm-theme #pmAmPrintBtn:hover,
+body.pm-theme #pmChgAmPrintBtn:hover,
+body.pm-theme .pm-btn-print:focus,
+body.pm-theme #btnPrintProject:focus,
+body.pm-theme #pmAmPrintBtn:focus,
+body.pm-theme #pmChgAmPrintBtn:focus,
+body.pm-theme .pm-header-doc-actions .pm-btn-print:hover,
+body.pm-theme .pm-header-doc-actions .pm-btn-print:focus,
+body.pm-theme .pm-header-doc-actions .pm-btn-print:active,
+body.pm-theme .pm-header-doc-actions #btnPrintProject:hover,
+body.pm-theme .pm-header-doc-actions #btnPrintProject:focus,
+body.pm-theme .pm-header-doc-actions #btnPrintProject:active{
+	background: #e4f1f9 !important;
+	border-color: #9fc4de !important;
+	color: #3d7ea3 !important;
+	box-shadow: none !important;
+}
+body.pm-theme .pm-header-doc-actions .pm-request-change-project,
+body.pm-theme .pm-header-doc-actions .btn-outline-warning.pm-request-change-project{
+	background: #fff7ed !important;
+	border: 1px solid #fdba74 !important;
+	color: #c2410c !important;
+}
+body.pm-theme .pm-header-doc-actions .pm-request-change-project:hover,
+body.pm-theme .pm-header-doc-actions .pm-request-change-project:focus,
+body.pm-theme .pm-header-doc-actions .pm-request-change-project:active,
+body.pm-theme .pm-header-doc-actions .btn-outline-warning.pm-request-change-project:hover,
+body.pm-theme .pm-header-doc-actions .btn-outline-warning.pm-request-change-project:focus,
+body.pm-theme .pm-header-doc-actions .btn-outline-warning.pm-request-change-project:active,
+body.pm-theme .pm-header-doc-actions .btn-outline-warning.pm-request-change-project:not(:disabled):not(.disabled):active{
+	background: #ffedd5 !important;
+	border-color: #fb923c !important;
+	color: #9a3412 !important;
+	box-shadow: none !important;
+}
+body.pm-theme .pm-header-doc-actions .pm-request-cancel-project,
+body.pm-theme .pm-header-doc-actions .btn-outline-danger.pm-request-cancel-project{
+	background: #fef2f2 !important;
+	border: 1px solid #fca5a5 !important;
+	color: #b91c1c !important;
+}
+body.pm-theme .pm-header-doc-actions .pm-request-cancel-project:hover,
+body.pm-theme .pm-header-doc-actions .pm-request-cancel-project:focus,
+body.pm-theme .pm-header-doc-actions .pm-request-cancel-project:active,
+body.pm-theme .pm-header-doc-actions .btn-outline-danger.pm-request-cancel-project:hover,
+body.pm-theme .pm-header-doc-actions .btn-outline-danger.pm-request-cancel-project:focus,
+body.pm-theme .pm-header-doc-actions .btn-outline-danger.pm-request-cancel-project:active,
+body.pm-theme .pm-header-doc-actions .btn-outline-danger.pm-request-cancel-project:not(:disabled):not(.disabled):active{
+	background: #fee2e2 !important;
+	border-color: #f87171 !important;
+	color: #991b1b !important;
+	box-shadow: none !important;
+}
+body.pm-theme .pm-project-toolbar .pm-project-back-btn,
+body.pm-theme .pm-project-toolbar-left .btn-outline-secondary{
+	background: #fff !important;
+	border-color: #cbd5e1 !important;
+	color: #334155 !important;
+	box-shadow: none !important;
+}
+body.pm-theme .pm-project-toolbar .pm-project-back-btn:hover,
+body.pm-theme .pm-project-toolbar .pm-project-back-btn:focus,
+body.pm-theme .pm-project-toolbar .pm-project-back-btn:active,
+body.pm-theme .pm-project-toolbar-left .btn-outline-secondary:hover,
+body.pm-theme .pm-project-toolbar-left .btn-outline-secondary:focus,
+body.pm-theme .pm-project-toolbar-left .btn-outline-secondary:active{
+	background: #f8fafc !important;
+	border-color: #94a3b8 !important;
+	color: #0f172a !important;
+	box-shadow: none !important;
+}
+body.pm-theme #modalRequestCancelProject .pm-can-btn-save,
+body.pm-theme #btnPmCanSave{
+	background: #eef6fb !important;
+	border: 1px solid #b7d3e8 !important;
+	color: #4f8eb3 !important;
+	font-weight: 700 !important;
+	box-shadow: none !important;
+}
+body.pm-theme #modalRequestCancelProject .pm-can-btn-save:hover,
+body.pm-theme #modalRequestCancelProject .pm-can-btn-save:focus,
+body.pm-theme #btnPmCanSave:hover,
+body.pm-theme #btnPmCanSave:focus{
+	background: #e4f1f9 !important;
+	border-color: #9fc4de !important;
+	color: #3d7ea3 !important;
+}
+body.pm-theme .pm-wizard-request-operate{
+	font-weight: 600 !important;
+	font-size: .95rem !important;
+	line-height: 1.3 !important;
+	padding: .45rem 1.15rem !important;
+	border-radius: .55rem !important;
+	box-shadow: none !important;
+}
+body.pm-theme .pm-btn-approve-memo,
+body.pm-theme #btnOpenApproveMemo{
+	background: #eff6ff !important;
+	border: 1px solid #93c5fd !important;
+	color: #1d4ed8 !important;
+	border-radius: 999px !important;
+	font-weight: 700 !important;
+	box-shadow: none !important;
+}
+body.pm-theme .pm-btn-approve-memo:hover,
+body.pm-theme .pm-btn-approve-memo:focus,
+body.pm-theme #btnOpenApproveMemo:hover,
+body.pm-theme #btnOpenApproveMemo:focus{
+	background: #dbeafe !important;
+	border-color: #60a5fa !important;
+	color: #1e40af !important;
+}
+body.pm-theme .pm-section2-view,
+body.pm-theme .section2-view{
+	background: #fff !important;
+	border-color: var(--pm-brand-soft-2) !important;
+	box-shadow: none !important;
+}
+body.pm-theme #general-info-summary .summary-value,
+body.pm-theme .pm-consistency-value,
+body.pm-theme .pm-consistency-value .pm-subline{
+	font-weight: 400 !important;
+}
+body.pm-theme #general-info-summary .pm-ginfo-banner button{
+	font-weight: 600 !important;
+	border-radius: .45rem !important;
+}
+
+.pm-year-select-wrap{
+	border-color: var(--pm-brand-line) !important;
+	background: linear-gradient(180deg, #faf7fc 0%, var(--pm-brand-soft) 100%) !important;
+	box-shadow: 0 10px 18px -16px rgba(146, 108, 184, .45) !important;
+}
+.pm-year-select-wrap:focus-within{
+	border-color: var(--pm-brand) !important;
+	box-shadow: 0 0 0 .15rem rgba(146, 108, 184, .22) !important;
+}
+.pm-year-select{
+	color: var(--pm-brand-ink) !important;
+}
+
+#modalGeneralInfo .pm-unit-combo-item:hover,
+#modalGeneralInfo .pm-unit-combo-item.is-active{
+	background: var(--pm-brand-soft) !important;
+	color: var(--pm-brand-deep) !important;
+}
+
+.pm-year-badge{
+	background: var(--pm-brand-soft) !important;
+	color: var(--pm-brand-ink) !important;
+	border: 1px solid var(--pm-brand-line) !important;
+}
+.pm-btn-add-project{
+	background: #926cb8 !important;
+	box-shadow: none !important;
+	color: #fff !important;
+	border-color: #734d96 !important;
+}
+#projectManageTable thead th{
+	background: var(--pm-brand-soft) !important;
+	color: var(--pm-brand-ink) !important;
+	border-color: var(--pm-brand-soft-2) !important;
+	text-align: center !important;
+	vertical-align: middle !important;
+}
+#projectManageTable.table-striped tbody tr:nth-of-type(odd),
+#projectManageTable.table-striped tbody tr:nth-of-type(even),
+#projectManageTable tbody tr:hover,
+#projectManageTable tbody tr{
+	background: #fff !important;
+}
+.pm-manage-pager .btn.active{
+	background: var(--pm-brand) !important;
+	border-color: var(--pm-brand-dark) !important;
+	color: #fff !important;
+}
+#projectManageTable .pm-sort-btn:hover,
+#projectManageTable .pm-sort-btn.active{
+	color: var(--pm-brand-dark) !important;
+}
+/* ปุ่มเปิดรายละเอียดการแก้ไขในตารางสถานะ */
+.pm-fix-note-btn{
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: .28rem;
+	margin-top: .35rem;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: #94a3b8;
+	border-radius: 0;
+	font-family: inherit;
+	font-size: .72rem;
+	font-weight: 400;
+	line-height: 1.3;
+	cursor: pointer;
+	max-width: 100%;
+	white-space: nowrap;
+	appearance: none;
+	-webkit-appearance: none;
+}
+.pm-fix-note-btn:hover,
+.pm-fix-note-btn:focus{
+	background: transparent;
+	color: #64748b;
+	border: 0;
+	outline: none;
+	text-decoration: underline;
+}
+.pm-fix-note-modal .modal-header{
+	background: linear-gradient(180deg, #faf7fc 0%, #f3eef8 100%);
+	border-bottom: 1px solid #e8def2;
+	color: #4a1d73;
+}
+.pm-fix-note-modal .modal-title{
+	font-weight: 700;
+	font-size: 1.05rem;
+	color: #4a1d73;
+}
+.pm-fix-note-meta{
+	margin-bottom: .85rem;
+}
+.pm-fix-note-code{
+	font-weight: 700;
+	color: #734d96;
+	font-size: .9rem;
+}
+.pm-fix-note-name{
+	font-weight: 500;
+	color: #334155;
+	margin-top: .15rem;
+}
+.pm-fix-note-status-wrap{
+	margin-top: .4rem;
+}
+.pm-fix-note-status{
+	display: inline-flex;
+	align-items: center;
+	padding: .18rem .55rem;
+	border-radius: 999px;
+	background: #f3eef8;
+	color: #5c3d7a;
+	font-size: .78rem;
+	font-weight: 600;
+}
+.pm-fix-note-label{
+	font-size: .82rem;
+	font-weight: 700;
+	color: #64748b;
+	margin-bottom: .35rem;
+}
+.pm-fix-note-body{
+	white-space: pre-wrap;
+	word-break: break-word;
+	background: #fff7f7;
+	border: 1px solid #fecaca;
+	border-radius: .65rem;
+	padding: .75rem .9rem;
+	color: #7f1d1d;
+	font-weight: 500;
+	line-height: 1.55;
+	min-height: 3rem;
+}
+
+#sidebar .submenu #submenu-approve .nav-item.active > .nav-link{
+	background:
+		linear-gradient(180deg, rgba(255,255,255,.7) 0%, rgba(255,255,255,.15) 45%, transparent 70%),
+		linear-gradient(90deg, #f3f8ee 0%, #c5ddb0 100%) !important;
+	color: var(--pm-side-active-ink) !important;
+	box-shadow: inset 0 1px 0 #fff, 0 8px 14px -10px rgba(47, 90, 28, .38);
+}
+
+.note-editable{
+	font-family: var(--pm-font) !important;
+}
+
+/* ----- การขอบรรจุแผน / ลำดับการตรวจสอบ ----- */
+body.pm-theme .pm-notify-result-card{
+	border: 1px solid var(--pm-brand-soft-2) !important;
+	border-left: 4px solid var(--pm-brand) !important;
+	background: var(--pm-brand-soft) !important;
+	box-shadow: none !important;
+}
+body.pm-theme .pm-notify-result-title{
+	font-weight: 600 !important;
+	color: var(--pm-brand-ink) !important;
+}
+body.pm-theme .pm-notify-result-grid .k{
+	font-weight: 500 !important;
+	color: #64748b !important;
+}
+body.pm-theme .pm-notify-result-grid .v{
+	font-weight: 400 !important;
+	color: #334155 !important;
+}
+body.pm-theme .pm-review-timeline{
+	border: 1px solid var(--pm-brand-soft-2) !important;
+	background: #faf7fc !important;
+	backdrop-filter: none !important;
+}
+body.pm-theme .pm-review-timeline-title{
+	font-weight: 600 !important;
+	color: var(--pm-brand-ink) !important;
+}
+body.pm-theme .pm-review-dot{
+	background: var(--pm-brand-soft) !important;
+	color: var(--pm-brand-dark) !important;
+	border: 1px solid var(--pm-brand-soft-2) !important;
+	box-shadow: none !important;
+	font-weight: 600 !important;
+}
+body.pm-theme .pm-review-label{
+	font-weight: 400 !important;
+	color: var(--pm-brand-ink) !important;
+}
+body.pm-theme .pm-review-meta,
+body.pm-theme .pm-review-note{
+	font-weight: 400 !important;
+}
+body.pm-theme .pm-notify-result-note-info{
+	background: #faf7fc !important;
+	border-color: var(--pm-brand-soft-2) !important;
+	color: var(--pm-brand-ink) !important;
+}
+
+/* ----- ลิงก์แก้ไข / ลบ ในตาราง (ไอคอนอย่างเดียว) ----- */
+body.pm-theme .pm-inline-act,
+.pm-inline-act{
+	display: inline-flex !important;
+	align-items: center;
+	justify-content: center;
+	gap: 0;
+	padding: .08rem !important;
+	margin: 0 .06rem !important;
+	border: 0 !important;
+	background: transparent !important;
+	box-shadow: none !important;
+	font-size: 0 !important;
+	line-height: 1 !important;
+	vertical-align: middle;
+	text-decoration: none !important;
+	width: auto;
+	min-width: 0;
+}
+body.pm-theme .pm-inline-act i,
+.pm-inline-act i{
+	display: inline-flex !important;
+	align-items: center;
+	justify-content: center;
+	width: 1.5rem;
+	height: 1.5rem;
+	border-radius: .4rem;
+	font-size: .78rem !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	line-height: 1;
+}
+body.pm-theme .pm-inline-act-edit,
+.pm-inline-act-edit{
+	color: #d97706 !important;
+}
+body.pm-theme .pm-inline-act-edit i,
+.pm-inline-act-edit i{
+	background: #fff7ed !important;
+	color: #ea580c !important;
+	border-radius: .4rem !important;
+}
+body.pm-theme .pm-inline-act-edit:hover,
+.pm-inline-act-edit:hover{
+	color: #c2410c !important;
+}
+body.pm-theme .pm-inline-act-edit:hover i,
+.pm-inline-act-edit:hover i{
+	background: #ffedd5 !important;
+}
+body.pm-theme .pm-inline-act-del,
+.pm-inline-act-del{
+	color: #be3a4a !important;
+}
+body.pm-theme .pm-inline-act-del i,
+.pm-inline-act-del i{
+	background: #fff1f2 !important;
+	color: #e11d48 !important;
+	border-radius: .4rem !important;
+}
+body.pm-theme .pm-inline-act-del:hover,
+.pm-inline-act-del:hover{
+	color: #9f1239 !important;
+}
+body.pm-theme .pm-inline-act-del:hover i,
+.pm-inline-act-del:hover i{
+	background: #ffe4e6 !important;
+}
+
+/* ปุ่มดูผล / แก้ไขผล / กรอกผล — พาสเทล */
+body.pm-theme .btn-kpi-view-result,
+body.pm-theme .btn-info.btn-kpi-view-result{
+	background: #f0f9ff !important;
+	border: 1px solid #bae6fd !important;
+	color: #0369a1 !important;
+	font-weight: 600 !important;
+	box-shadow: none !important;
+}
+body.pm-theme .btn-kpi-view-result:hover,
+body.pm-theme .btn-kpi-view-result:focus,
+body.pm-theme .btn-info.btn-kpi-view-result:hover,
+body.pm-theme .btn-info.btn-kpi-view-result:focus{
+	background: #e0f2fe !important;
+	border-color: #7dd3fc !important;
+	color: #075985 !important;
+}
+body.pm-theme .btn-kpi-edit-result,
+body.pm-theme .btn-kpi-fill-result.btn-kpi-edit-result,
+body.pm-theme .btn-activity-edit-result{
+	background: #fff7ed !important;
+	border: 1px solid #fed7aa !important;
+	color: #c2410c !important;
+	font-weight: 600 !important;
+	box-shadow: none !important;
+}
+body.pm-theme .btn-kpi-edit-result:hover,
+body.pm-theme .btn-kpi-edit-result:focus,
+body.pm-theme .btn-kpi-fill-result.btn-kpi-edit-result:hover,
+body.pm-theme .btn-kpi-fill-result.btn-kpi-edit-result:focus,
+body.pm-theme .btn-activity-edit-result:hover,
+body.pm-theme .btn-activity-edit-result:focus{
+	background: #ffedd5 !important;
+	border-color: #fdba74 !important;
+	color: #9a3412 !important;
+}
+body.pm-theme .btn-kpi-fill-result.btn-success,
+body.pm-theme .btn-activity-fill-result.btn-success{
+	background: #f0fdf4 !important;
+	border: 1px solid #bbf7d0 !important;
+	color: #15803d !important;
+	font-weight: 600 !important;
+	box-shadow: none !important;
+}
+body.pm-theme .btn-kpi-fill-result.btn-success:hover,
+body.pm-theme .btn-kpi-fill-result.btn-success:focus,
+body.pm-theme .btn-activity-fill-result.btn-success:hover,
+body.pm-theme .btn-activity-fill-result.btn-success:focus{
+	background: #dcfce7 !important;
+	border-color: #86efac !important;
+	color: #166534 !important;
+}
+
+/* ----- Modal: โทนม่วงพาสเทล ----- */
+body.pm-theme .modal-content{
+	border: 1px solid var(--pm-brand-soft-2) !important;
+	border-radius: .7rem !important;
+	overflow: hidden;
+	box-shadow: 0 18px 40px -24px rgba(74, 50, 99, .45);
+}
+/* ปฏิทินเดือน/ปี ในโมดัลข้อมูลทั่วไปต้องไม่ถูกตัดแถว ก.ย.–ธ.ค. */
+body.pm-theme #modalGeneralInfo .modal-content{
+	overflow: visible !important;
+}
+body.pm-theme #modalGeneralInfo .modal-body{
+	overflow: visible !important;
+}
+body.pm-theme > .datepicker.datepicker-dropdown,
+body > .datepicker.datepicker-dropdown{
+	z-index: 20000 !important;
+	overflow: visible !important;
+	max-height: none !important;
+}
+body.pm-theme > .datepicker.datepicker-dropdown .datepicker-months,
+body > .datepicker.datepicker-dropdown .datepicker-months,
+body.pm-theme > .datepicker.datepicker-dropdown .datepicker-months tbody,
+body > .datepicker.datepicker-dropdown .datepicker-months tbody,
+body.pm-theme > .datepicker.datepicker-dropdown .datepicker-months td,
+body > .datepicker.datepicker-dropdown .datepicker-months td{
+	overflow: visible !important;
+	height: auto !important;
+	max-height: none !important;
+}
+body.pm-theme > .datepicker.datepicker-dropdown .datepicker-months table tr td span.month,
+body > .datepicker.datepicker-dropdown .datepicker-months table tr td span.month{
+	height: 2.15rem !important;
+	line-height: 2.15rem !important;
+}
+body.pm-theme .modal-header,
+body.pm-theme .modal-header.bg-primary,
+body.pm-theme .modal-header.bg-info,
+body.pm-theme .modal-header.bg-success,
+body.pm-theme .modal-header.bg-light,
+body.pm-theme .modal-header.bg-secondary,
+body.pm-theme .pm-budget-disburse-modal .modal-header,
+body.pm-theme .pm-kpi-result-header,
+body.pm-theme .pm-activity-result-header,
+body.pm-theme .pm-activity-disburse-header,
+body.pm-theme .pm-project-eval-header,
+body.pm-theme .pm-inc-edit-header{
+	background: var(--pm-brand-soft) !important;
+	color: var(--pm-brand-ink) !important;
+	border-bottom: 1px solid var(--pm-brand-soft-2) !important;
+}
+body.pm-theme .modal-header.bg-warning{
+	background: #fef9c3 !important;
+	color: #854d0e !important;
+	border-bottom: 1px solid #fde68a !important;
+}
+body.pm-theme .modal-header.bg-danger{
+	background: #fee2e2 !important;
+	color: #991b1b !important;
+	border-bottom: 1px solid #fecaca !important;
+}
+body.pm-theme .modal-header .modal-title,
+body.pm-theme .modal-header .modal-title i,
+body.pm-theme .modal-header.bg-primary .modal-title,
+body.pm-theme .modal-header.bg-info .modal-title,
+body.pm-theme .modal-header.bg-success .modal-title,
+body.pm-theme .modal-header .text-white,
+body.pm-theme .modal-header small,
+body.pm-theme .pm-project-eval-header .modal-title,
+body.pm-theme .pm-project-eval-header-sub,
+body.pm-theme .pm-kpi-result-header .modal-title,
+body.pm-theme .pm-activity-result-header .modal-title,
+body.pm-theme .pm-inc-edit-header .modal-title,
+body.pm-theme .pm-inc-edit-sub{
+	color: var(--pm-brand-ink) !important;
+}
+body.pm-theme .pm-project-eval-header-sub,
+body.pm-theme .pm-inc-edit-sub,
+body.pm-theme .modal-header small{
+	opacity: .85;
+	font-weight: 500 !important;
+}
+body.pm-theme .modal-header .close,
+body.pm-theme .modal-header .close.text-white,
+body.pm-theme .modal-header .close span,
+body.pm-theme .pm-project-eval-close,
+body.pm-theme .pm-kpi-result-close,
+body.pm-theme .pm-activity-result-close,
+body.pm-theme .pm-inc-edit-close{
+	color: var(--pm-brand-ink) !important;
+	text-shadow: none !important;
+	opacity: .7;
+	background: transparent !important;
+	border-color: transparent !important;
+}
+body.pm-theme .modal-header .close:hover,
+body.pm-theme .pm-project-eval-close:hover,
+body.pm-theme .pm-inc-edit-close:hover,
+body.pm-theme .pm-kpi-result-close:hover,
+body.pm-theme .pm-activity-result-close:hover{
+	opacity: 1;
+	color: var(--pm-brand-dark) !important;
+}
+body.pm-theme .pm-inc-edit-icon{
+	background: #fff !important;
+	color: var(--pm-brand) !important;
+}
+body.pm-theme .modal-footer{
+	background: #faf7fc !important;
+	border-top: 1px solid var(--pm-brand-soft-2) !important;
+}
+body.pm-theme .modal-footer .btn-secondary,
+body.pm-theme .modal-footer .btn-outline-secondary,
+body.pm-theme .modal-footer .btn-dark,
+body.pm-theme .modal-footer .btn-light{
+	background: #fff !important;
+	border: 1px solid var(--pm-brand-soft-2) !important;
+	color: var(--pm-brand-ink) !important;
+	font-weight: 600 !important;
+	box-shadow: none !important;
+}
+body.pm-theme .modal-footer .btn-primary{
+	background: var(--pm-brand) !important;
+	border-color: var(--pm-brand) !important;
+	color: #fff !important;
+	box-shadow: none !important;
+}
+body.pm-theme .modal-footer .btn-success,
+body.pm-theme #btnModalSaveGeneral{
+	background: #16a34a !important;
+	border: 1px solid #16a34a !important;
+	color: #fff !important;
+	font-weight: 600 !important;
+	box-shadow: none !important;
+}
+body.pm-theme .modal-footer .btn-success:hover,
+body.pm-theme #btnModalSaveGeneral:hover{
+	background: #15803d !important;
+	border-color: #15803d !important;
+	color: #fff !important;
+}
+body.pm-theme .modal-footer .btn-danger,
+body.pm-theme #btnConfirmIncludeProject{
+	background: #fff !important;
+	border: 1px solid #f9a8d4 !important;
+	color: #9d174d !important;
+	font-weight: 600 !important;
+	box-shadow: none !important;
+}
+body.pm-theme .modal thead th,
+body.pm-theme .modal thead.bgc-secondary-l4 th,
+body.pm-theme .modal thead tr.bg-dark th,
+body.pm-theme .modal .bg-dark.text-white th{
+	background: var(--pm-brand-soft) !important;
+	color: var(--pm-brand-ink) !important;
+	border-color: var(--pm-brand-soft-2) !important;
+	font-weight: 600 !important;
+}
+body.pm-theme .modal .table-bordered td,
+body.pm-theme .modal .table-bordered th{
+	border-color: var(--pm-brand-soft-2) !important;
+}
+body.pm-theme #modalGeneralInfo .modal-header{
+	border-bottom: 1px solid var(--pm-brand-soft-2) !important;
+}
+body.pm-theme #modalGeneralInfo .modal-title{
+	color: var(--pm-brand-ink) !important;
+}
+body.pm-theme #modalGeneralInfo .form-control,
+body.pm-theme #modalGeneralInfo .form-control[readonly],
+body.pm-theme #modalGeneralInfo .form-control:disabled,
+body.pm-theme #modalGeneralInfo .input-group-text,
+body.pm-theme #modalGeneralInfo .select2-selection--single{
+	background-color: #fff !important;
+	border-color: var(--pm-brand-soft-2) !important;
+}
+
+/* บันทึกข้อความราชการ: คงพื้นขาว */
+body.pm-theme .pm-am-official-modal .modal-content,
+body.pm-theme .pm-am-official-modal .modal-header,
+body.pm-theme .pm-am-official-modal .modal-footer{
+	background: #fff !important;
+	color: #000 !important;
+	border-color: #e5e7eb !important;
+	box-shadow: none;
+}
+body.pm-theme .pm-am-official-modal .modal-header .modal-title,
+body.pm-theme .pm-am-official-modal .modal-header .close{
+	color: #000 !important;
+}
+body.pm-theme .pm-am-official-modal .pm-am-paper,
+body.pm-theme .pm-am-official-modal .pm-am-paper *,
+body.pm-theme .pm-am-official-modal .pm-am-table,
+body.pm-theme .pm-am-official-modal .pm-am-table th,
+body.pm-theme .pm-am-official-modal .pm-am-table td{
+	font-family: "TH Sarabun New", "Sarabun", "THSarabunNew", Tahoma, sans-serif !important;
+}
+body.pm-theme .pm-am-official-modal .pm-am-paper,
+body.pm-theme .pm-am-official-modal .pm-am-paper .pm-am-title,
+body.pm-theme .pm-am-official-modal .pm-am-paper .pm-am-para,
+body.pm-theme .pm-am-official-modal .pm-am-paper .pm-am-closing,
+body.pm-theme .pm-am-official-modal .pm-am-paper .pm-am-lbl,
+body.pm-theme .pm-am-official-modal .pm-am-paper .pm-am-edit,
+body.pm-theme .pm-am-official-modal .pm-am-paper .pm-am-subject,
+body.pm-theme .pm-am-official-modal .pm-am-paper .pm-am-print-text,
+body.pm-theme .pm-am-official-modal .pm-am-paper .pm-am-sign-heading,
+body.pm-theme .pm-am-official-modal .pm-am-paper .pm-am-sign-name,
+body.pm-theme .pm-am-official-modal .pm-am-paper .pm-am-sign-date,
+body.pm-theme .pm-am-official-modal .pm-am-table,
+body.pm-theme .pm-am-official-modal .pm-am-table th,
+body.pm-theme .pm-am-official-modal .pm-am-table td{
+	font-size: 16pt !important;
+}
+@media print {
+	body.pm-theme #pmAmPrintMount .pm-am-paper,
+	body.pm-theme #pmAmPrintMount .pm-am-paper *:not(.pm-am-title){
+		font-size: 20pt !important;
+		color: #000 !important;
+	}
+	body.pm-theme #pmAmPrintMount .pm-am-paper .pm-am-title{
+		font-size: 28pt !important;
+		font-weight: 700 !important;
+		color: #000 !important;
+	}
+	body.pm-theme #pmAmPrintMount .pm-am-emblem{
+		width: 100px !important;
+		height: 100px !important;
+	}
+}
+body.pm-theme .pm-am-official-modal .pm-am-table,
+body.pm-theme .pm-am-official-modal .pm-am-table th,
+body.pm-theme .pm-am-official-modal .pm-am-table td{
+	color: #000 !important;
+	background: #fff !important;
+	border-color: #000 !important;
+	font-weight: 400 !important;
+}
+body.pm-theme .pm-am-official-modal .pm-am-table.pm-am-table-cmp th{
+	font-weight: 700 !important;
+}
+
+/* ----- ส่วนที่ 6 การติดตามประเมินผล ----- */
+body.pm-theme .pm-s6-card,
+body.pm-theme .pm-s6-card.pm-s6-evaluate{
+	border: 1px solid var(--pm-brand-soft-2) !important;
+	box-shadow: none !important;
+}
+body.pm-theme .pm-s6-card.pm-s6-evaluate{
+	background: var(--pm-brand-soft) !important;
+}
+body.pm-theme .pm-s6-card.pm-s6-risk{
+	background: #fffbeb !important;
+	border: 1px solid #fde68a !important;
+	box-shadow: none !important;
+}
+body.pm-theme .pm-s6-title,
+body.pm-theme .pm-s6-card.pm-s6-evaluate .pm-s6-title{
+	color: var(--pm-brand-ink) !important;
+	font-weight: 600 !important;
+}
+body.pm-theme .pm-s6-card.pm-s6-risk .pm-s6-title{
+	color: #92400e !important;
+	font-weight: 600 !important;
+}
+body.pm-theme .pm-s6-label{
+	font-weight: 500 !important;
+	color: #64748b !important;
+}
+body.pm-theme .pm-s6-value{
+	font-weight: 400 !important;
+	color: #334155 !important;
+}
+body.pm-theme .pm-project-eval-summary.card{
+	background: #faf7fc !important;
+	border-color: var(--pm-brand-soft-2) !important;
+	box-shadow: none !important;
+}
+body.pm-theme .pm-project-eval-summary-head{
+	color: var(--pm-brand-ink) !important;
+	font-weight: 600 !important;
+	border-bottom-color: var(--pm-brand-soft-2) !important;
+}
+
+/* โมดัลสรุปคำขอ: โทนอ่อน */
+body.pm-theme #modalRequestDetail .md-summary-table thead th,
+body.pm-theme #modalRequestDetail .md-summary-table.md-operate thead th{
+	background: var(--pm-brand-soft) !important;
+	color: var(--pm-brand-ink) !important;
+}
+body.pm-theme #modalRequestDetail .md-summary-table thead th,
+body.pm-theme #modalRequestDetail .md-summary-table.md-operate thead th,
+body.pm-theme #modalRequestDetail .md-summary-table.md-operate tbody td,
+body.pm-theme #modalRequestDetail .md-summary-table.md-operate tbody td:first-child,
+body.pm-theme #modalRequestDetail .md-summary-table.md-operate tbody td:last-child,
+body.pm-theme #modalRequestDetail .md-seq-head,
+body.pm-theme #modalRequestDetail .md-seq-fold-toggle,
+body.pm-theme #modalRequestDetail .md-section-above-table,
+body.pm-theme #modalRequestDetail .md-section-above-table .font-weight-bold,
+body.pm-theme #modalRequestDetail .md-section-above-table .text-110{
+	font-weight: 400 !important;
+}
+body.pm-theme #modalRequestDetail .md-summary-table.md-operate,
+body.pm-theme #modalRequestDetail .md-summary-table.md-operate td,
+body.pm-theme #modalRequestDetail .md-summary-table.md-operate th{
+	border-color: var(--pm-brand-soft-2) !important;
+}
+body.pm-theme #modalRequestDetail .md-summary-table.md-operate tbody td:first-child{
+	background: #faf7fc !important;
+	color: var(--pm-brand-ink) !important;
+}
+body.pm-theme #modalRequestDetail .md-seq-card{
+	border-color: var(--pm-brand-soft-2) !important;
+	background: #faf7fc !important;
+	box-shadow: none !important;
+}
+body.pm-theme #modalRequestDetail .md-seq-head,
+body.pm-theme #modalRequestDetail .md-seq-fold-toggle{
+	background: var(--pm-brand-soft) !important;
+	color: var(--pm-brand-ink) !important;
+	border-color: var(--pm-brand-soft-2) !important;
+}
+body.pm-theme #modalRequestDetail .md-seq-step{
+	background: #eef6fb !important;
+	border-color: #b7d3e8 !important;
+	color: #3d7ea3 !important;
+	box-shadow: none !important;
+}
+body.pm-theme #modalRequestDetail .md-seq-chip-date{
+	background: #eef6fb !important;
+	border-color: #b7d3e8 !important;
+	color: #3d7ea3 !important;
+}
+body.pm-theme #modalRequestDetail .md-seq-submitter{
+	color: var(--pm-brand-dark) !important;
+}
+
+/* โมดัลแจ้งผล: โทนม่วงอ่อน */
+body.pm-theme #modalNotifyResult .nr-unit-card{
+	background: var(--pm-brand-soft) !important;
+	border-color: var(--pm-brand-soft-2) !important;
+	border-left-color: var(--pm-brand) !important;
+}
+body.pm-theme #modalNotifyResult .nr-unit-name,
+body.pm-theme #modalNotifyResult .nr-label,
+body.pm-theme #modalNotifyResult .nr-label-budget-src,
+body.pm-theme #modalNotifyResult .nr-label-budget-amt,
+body.pm-theme #modalNotifyResult .nr-label-decision,
+body.pm-theme #modalNotifyResult .nr-label-note,
+body.pm-theme #modalNotifyResult .nr-leave-check-text{
+	color: var(--pm-brand-ink) !important;
+}
+body.pm-theme #modalNotifyResult .nr-leave-check{
+	background: var(--pm-brand-soft) !important;
+	border-color: var(--pm-brand-soft-2) !important;
+}
+body.pm-theme #modalNotifyResult .nr-leave-check input[type="checkbox"]{
+	accent-color: var(--pm-brand) !important;
+}
+body.pm-theme #modalNotifyResult .nr-leave-check-hint{
+	color: var(--pm-brand-dark) !important;
+}
+body.pm-theme #modalNotifyResult .nr-budget-selected,
+body.pm-theme #modalNotifyResult .nr-budget-pick-panel,
+body.pm-theme #modalNotifyResult .nr-budget-pick-toolbar,
+body.pm-theme #modalNotifyResult .nr-budget-pick-table thead th,
+body.pm-theme #modalNotifyResult .nr-budget-pick-foot{
+	background: var(--pm-brand-soft) !important;
+	border-color: var(--pm-brand-soft-2) !important;
+	color: var(--pm-brand-ink) !important;
+}
+body.pm-theme #modalNotifyResult .nr-budget-selected{
+	background: #faf7fc !important;
+}
+body.pm-theme #modalNotifyResult .nr-budget-pick-panel{
+	background: #fff !important;
+}
+body.pm-theme #modalNotifyResult .nr-budget-pick-table tbody tr:hover td{
+	background: #faf7fc !important;
+}
+body.pm-theme #modalNotifyResult .nr-budget-pick-table tbody tr.is-active td{
+	background: var(--pm-brand-soft) !important;
+}
+body.pm-theme #modalNotifyResult .nr-budget-amt-chip,
+body.pm-theme #modalNotifyResult .nr-budget-pick-money{
+	color: var(--pm-brand-dark) !important;
+}
+
+.pm-fb-report{ padding: 1rem 1.1rem 1.15rem; }
+.pm-fb-report-head{
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 1rem;
+	margin-bottom: .85rem;
+}
+.pm-fb-report-title{
+	font-weight: 800;
+	color: #4a3263;
+	margin: 0;
+	font-size: 1.05rem;
+}
+.pm-fb-report-note{
+	color: #64748b;
+	font-size: .82rem;
+	margin: .15rem 0 0;
+}
+.pm-fb-report-kpis{
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: .7rem;
+	margin-bottom: 1rem;
+}
+.pm-fb-report-kpi{
+	background: #faf7fc;
+	border: 1px solid #e8def2;
+	border-radius: .75rem;
+	padding: .7rem .8rem;
+}
+.pm-fb-report-kpi .n{
+	font-weight: 800;
+	font-size: 1.35rem;
+	color: #4a3263;
+	line-height: 1.1;
+}
+.pm-fb-report-kpi .l{
+	color: #64748b;
+	font-size: .78rem;
+	margin-top: .2rem;
+}
+.pm-fb-report-head-right{
+	display: flex;
+	align-items: center;
+	gap: .75rem;
+	flex-shrink: 0;
+}
+.pm-fb-export-btn{
+	display: inline-flex;
+	align-items: center;
+	gap: .4rem;
+	background: #1d7a46;
+	color: #fff !important;
+	border: 0;
+	border-radius: .55rem;
+	padding: .42rem .85rem;
+	font-size: .82rem;
+	font-weight: 700;
+	text-decoration: none !important;
+	white-space: nowrap;
+	box-shadow: 0 6px 14px -10px rgba(29,122,70,.9);
+}
+.pm-fb-export-btn:hover{
+	background: #16653a;
+	color: #fff !important;
+}
+.pm-fb-report-stars-avg{
+	color: #f4b400;
+	letter-spacing: .08em;
+	font-size: 1.05rem;
+}
+.pm-fb-bar-row{
+	display: flex;
+	align-items: center;
+	gap: .55rem;
+	margin: .28rem 0;
+}
+.pm-fb-bar-lab{
+	width: 3.4rem;
+	color: #4a3263;
+	font-size: .78rem;
+	font-weight: 700;
+	white-space: nowrap;
+}
+.pm-fb-bar-track{
+	flex: 1;
+	height: .55rem;
+	background: #f1e9f7;
+	border-radius: 999px;
+	overflow: hidden;
+}
+.pm-fb-bar-fill{
+	height: 100%;
+	background: linear-gradient(90deg, #f4b400, #f59e0b);
+	border-radius: 999px;
+}
+.pm-fb-bar-cnt{
+	width: 2rem;
+	text-align: right;
+	color: #64748b;
+	font-size: .78rem;
+}
+.pm-fb-report-table{ width: 100%; border-collapse: collapse; }
+.pm-fb-report-table th,
+.pm-fb-report-table td{
+	padding: .5rem .55rem;
+	border-bottom: 1px solid #f0eaf6;
+	vertical-align: top;
+	font-size: .82rem;
+}
+.pm-fb-report-table th{
+	color: #5c3d7a;
+	font-weight: 700;
+	background: #faf7fc;
+}
+.pm-fb-report-empty{ color: #64748b; padding: .6rem 0; }
+@media (max-width: 768px){
+	.pm-fb-report-kpis{ grid-template-columns: 1fr 1fr; }
+	.pm-fb-report-head{ flex-direction: column; align-items: flex-start; }
+	.pm-fb-report-head-right{ width: 100%; justify-content: space-between; }
+}

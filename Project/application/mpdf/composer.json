@@ -1,0 +1,10 @@
+{
+    "name": "app/mpdf-deps",
+    "description": "Shared mPDF install for ECM apps under /var/www/mpdf",
+    "require": {
+        "mpdf/mpdf": "^8.2"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

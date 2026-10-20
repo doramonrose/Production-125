@@ -1,0 +1,129 @@
+{{-- เงินเดือนข้าราชการ: แก้ไขเนื้อหาตั้งแต่ "เรียน" ลงมาในไฟล์นี้ --}}
+<table class="meta-table">
+    <tr>
+        <td>เรียน {{ $to !== '' ? \App\Support\ThaiDigits::inString($to) : ' ' }}</td>
+    </tr>
+</table>
+
+@php
+    $defaultMemoBlockOrder = ['paragraph1', 'items', 'paragraph3'];
+    $memoBlockOrder = is_array($memoBlockOrder ?? null) && ($memoBlockOrder ?? []) !== []
+        ? $memoBlockOrder
+        : $defaultMemoBlockOrder;
+    $memoBlockOrder = array_values(array_filter(
+        $memoBlockOrder,
+        static fn (string $block): bool => $block !== 'paragraph2'
+    ));
+    if ($memoBlockOrder === []) {
+        $memoBlockOrder = $defaultMemoBlockOrder;
+    }
+@endphp
+@foreach ($memoBlockOrder as $memoBlock)
+    @if (in_array($memoBlock, ['paragraph1', 'paragraph3', 'paragraph4'], true))
+        @php
+            $paragraphText = match ($memoBlock) {
+                'paragraph1' => $paragraph1,
+                'paragraph3' => $paragraph3,
+                default => $paragraph4 ?? '',
+            };
+        @endphp
+        @foreach ($formatMemoParagraphBlocks($paragraphText) as $paragraphBlock)
+            <table class="p-wrap" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                    <td lang="th">
+                        <div class="p" style="text-align: justify;">
+                            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{!! $paragraphBlock !!}
+                        </div>
+                    </td>
+                </tr>
+            </table>
+        @endforeach
+    @elseif ($memoBlock === 'items')
+        {{-- <div class="items-section">
+            <table class="items-table" border="0">
+                <tbody>
+                    @forelse ($withdrawItemLines as $idx => $line)
+                        <tr>
+                            <td class="col-name">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{{ \App\Support\ThaiDigits::inString((string) ($line['name'] ?? '')) }}</td>
+                            <td class="col-amt">จำนวนเงิน {{ $formatBahtCell((float) ($line['amount'] ?? 0)) }} บาท</td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td class="items-empty" colspan="2">- ไม่มีรายการ -</td>
+                        </tr>
+                    @endforelse
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td class="col-no" style="text-align:center;">รวมทั้งสิ้น</td>
+                        <td class="col-amt">จำนวนเงิน <u>{{ $formatBahtCell((float) ($itemsTotalAmount ?? 0)) }}</u> บาท</td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="text-align:right;font-weight:normal;">
+                            ({{ $itemsTotalText ?? ($totalText ?? '-') }})
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div> --}}
+    @endif
+@endforeach
+
+<div class="signatures-wrap">
+    <table class="signatures-grid">
+        <tr>
+            <td colspan="2">
+                <div class="sign-block">
+                    <div class="sign-img-wrap">
+                        @if ($showDeanSigImg)
+                            <img class="sign-img" src="{{ $deanSigUri }}" alt="">
+                        @else
+                            <div class="sign-dots">(..........................................................)</div>
+                        @endif
+                    </div>
+                    @if ($deanStatusMemo !== '')
+                        <div class="sign-status">{{ $deanStatusMemo }}</div>
+                    @endif
+                    <div>({{ $deanNameMemo !== '' ? \App\Support\ThaiDigits::inString($deanNameMemo) : '-' }})</div>
+                    <div>{{ \App\Support\ThaiDigits::inString($deanRoleMemo) }}คณะเภสัชศาสตร์</div>
+                </div>
+            </td>
+        </tr>
+    </table>
+</div>
+@if (!empty($additionalSignerCards ?? []))
+    <div class="signatures-extra-wrap">
+        <table class="signatures-grid signatures-grid-extra">
+            @foreach (array_chunk($additionalSignerCards, 2) as $pair)
+                <tr>
+                    @foreach ($pair as $card)
+                        <td>
+                            <div class="sign-block">
+                                <div class="sign-img-wrap">
+                                    @if (!empty($card['show_sig']))
+                                        <img class="sign-img" src="{{ $card['sig_uri'] }}" alt="">
+                                    @else
+                                        <div class="sign-dots">(..........................................................)</div>
+                                    @endif
+                                </div>
+                                @if (!empty($card['status_line']))
+                                    <div class="sign-status">{{ $card['status_line'] }}</div>
+                                @endif
+                                <div>{{ $card['name'] ?? '-' }}</div>
+                                <div>{{ $card['position'] ?? '-' }}</div>
+                                <div>{{ $card['role'] ?? '-' }}</div>
+                            </div>
+                        </td>
+                    @endforeach
+                    @if (count($pair) === 1)
+                        <td></td>
+                    @endif
+                </tr>
+            @endforeach
+        </table>
+    </div>
+@endif
+
+@if ($paragraph1 === '' && $paragraph3 === '' && ($paragraph4 ?? '') === '')
+    <div class="p"> </div>
+@endif
