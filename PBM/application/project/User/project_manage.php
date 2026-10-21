@@ -1722,6 +1722,34 @@ if (!function_exists('pm_percent_progress_tone')) {
 	}
 }
 
+if (!function_exists('pm_format_plain_number')) {
+	/** แสดงตัวเลขแบบไม่มีทศนิยมถ้าเป็นจำนวนเต็ม เช่น 100.00 → 100, 1.50 → 1.5 */
+	function pm_format_plain_number($v, bool $blankZero = false): string
+	{
+		if ($v === null) {
+			return '';
+		}
+		$s = trim((string)$v);
+		if ($s === '') {
+			return '';
+		}
+		$s = str_replace(',', '', $s);
+		if (!is_numeric($s)) {
+			return trim((string)$v);
+		}
+		if (strpos($s, '.') !== false) {
+			$s = rtrim(rtrim($s, '0'), '.');
+		}
+		if ($s === '' || $s === '-' || $s === '-0') {
+			$s = '0';
+		}
+		if ($blankZero && abs((float)$s) < 0.0000001) {
+			return '';
+		}
+		return $s;
+	}
+}
+
 if (!function_exists('pm_format_activity_target_amount_display')) {
 	function pm_format_activity_target_amount_display($v): string
 	{
@@ -6798,10 +6826,7 @@ if ($op === 'render_kpi_goal_table') {
 		? pm_load_project_kpi_results_map($db_Project, $project_id)
 		: [];
 	$fmtInt = function($v) {
-		if ($v === '' || $v === null) return '';
-		$f = (float)$v;
-		if ($f == 0.0) return '';
-		return number_format(round($f, 0), 0);
+		return pm_format_plain_number($v, true);
 	};
 	$kpiSum = function_exists('pmGetProjectKpiWeightSum') ? pmGetProjectKpiWeightSum($db_Project, $project_id) : 0.0;
 	$kpiSumFmt = rtrim(rtrim(number_format($kpiSum, 2, '.', ''), '0'), '.');
@@ -6852,19 +6877,19 @@ if ($op === 'render_kpi_goal_table') {
 							'code_unit' => $pk['code_unit'] ?? '',
 							'kpi_name' => $pk['kpi_name'] ?? $kpi_name_show,
 							'kpi_unit' => $pk['kpi_unit'] ?? $kpi_unit_show,
-							'kpi_weight' => $pk['kpi_weight'] ?? '',
-							'mon_01' => $pk['mon_01'] ?? '',
-							'mon_02' => $pk['mon_02'] ?? '',
-							'mon_03' => $pk['mon_03'] ?? '',
-							'mon_04' => $pk['mon_04'] ?? '',
-							'mon_05' => $pk['mon_05'] ?? '',
-							'mon_06' => $pk['mon_06'] ?? '',
-							'mon_07' => $pk['mon_07'] ?? '',
-							'mon_08' => $pk['mon_08'] ?? '',
-							'mon_09' => $pk['mon_09'] ?? '',
-							'mon_10' => $pk['mon_10'] ?? '',
-							'mon_11' => $pk['mon_11'] ?? '',
-							'mon_12' => $pk['mon_12'] ?? '',
+							'kpi_weight' => pm_format_plain_number($pk['kpi_weight'] ?? ''),
+							'mon_01' => pm_format_plain_number($pk['mon_01'] ?? '', true),
+							'mon_02' => pm_format_plain_number($pk['mon_02'] ?? '', true),
+							'mon_03' => pm_format_plain_number($pk['mon_03'] ?? '', true),
+							'mon_04' => pm_format_plain_number($pk['mon_04'] ?? '', true),
+							'mon_05' => pm_format_plain_number($pk['mon_05'] ?? '', true),
+							'mon_06' => pm_format_plain_number($pk['mon_06'] ?? '', true),
+							'mon_07' => pm_format_plain_number($pk['mon_07'] ?? '', true),
+							'mon_08' => pm_format_plain_number($pk['mon_08'] ?? '', true),
+							'mon_09' => pm_format_plain_number($pk['mon_09'] ?? '', true),
+							'mon_10' => pm_format_plain_number($pk['mon_10'] ?? '', true),
+							'mon_11' => pm_format_plain_number($pk['mon_11'] ?? '', true),
+							'mon_12' => pm_format_plain_number($pk['mon_12'] ?? '', true),
 						];
 						$payloadJson = htmlspecialchars(json_encode($payload, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
 						$kpiPlanJson = htmlspecialchars(json_encode(pm_kpi_month_plan_payload($pk), JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
@@ -16591,10 +16616,7 @@ if ($op === 'add_project') {
 									<?php else: ?>
 										<?php
 										$fmtInt = function($v) {
-											if ($v === '' || $v === null) return '';
-											$f = (float)$v;
-											if ($f == 0.0) return '';
-											return number_format(round($f, 0), 0);
+											return pm_format_plain_number($v, true);
 										};
 										?>
 										<?php foreach ($project_kpi_list as $i => $pk): 
@@ -16617,19 +16639,19 @@ if ($op === 'add_project') {
 												'code_unit' => $pk['code_unit'] ?? '',
 												'kpi_name' => $pk['kpi_name'] ?? '',
 												'kpi_unit' => $pk['kpi_unit'] ?? '',
-												'kpi_weight' => $pk['kpi_weight'] ?? '',
-												'mon_01' => $pk['mon_01'] ?? '',
-												'mon_02' => $pk['mon_02'] ?? '',
-												'mon_03' => $pk['mon_03'] ?? '',
-												'mon_04' => $pk['mon_04'] ?? '',
-												'mon_05' => $pk['mon_05'] ?? '',
-												'mon_06' => $pk['mon_06'] ?? '',
-												'mon_07' => $pk['mon_07'] ?? '',
-												'mon_08' => $pk['mon_08'] ?? '',
-												'mon_09' => $pk['mon_09'] ?? '',
-												'mon_10' => $pk['mon_10'] ?? '',
-												'mon_11' => $pk['mon_11'] ?? '',
-												'mon_12' => $pk['mon_12'] ?? ''
+												'kpi_weight' => pm_format_plain_number($pk['kpi_weight'] ?? ''),
+												'mon_01' => pm_format_plain_number($pk['mon_01'] ?? '', true),
+												'mon_02' => pm_format_plain_number($pk['mon_02'] ?? '', true),
+												'mon_03' => pm_format_plain_number($pk['mon_03'] ?? '', true),
+												'mon_04' => pm_format_plain_number($pk['mon_04'] ?? '', true),
+												'mon_05' => pm_format_plain_number($pk['mon_05'] ?? '', true),
+												'mon_06' => pm_format_plain_number($pk['mon_06'] ?? '', true),
+												'mon_07' => pm_format_plain_number($pk['mon_07'] ?? '', true),
+												'mon_08' => pm_format_plain_number($pk['mon_08'] ?? '', true),
+												'mon_09' => pm_format_plain_number($pk['mon_09'] ?? '', true),
+												'mon_10' => pm_format_plain_number($pk['mon_10'] ?? '', true),
+												'mon_11' => pm_format_plain_number($pk['mon_11'] ?? '', true),
+												'mon_12' => pm_format_plain_number($pk['mon_12'] ?? '', true)
 											];
 											$payloadJson = htmlspecialchars(json_encode($payload), ENT_QUOTES, 'UTF-8');
 											$kpiPlanJson = htmlspecialchars(json_encode(pm_kpi_month_plan_payload($pk), JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
@@ -20318,51 +20340,51 @@ if ($op === 'add_project') {
 										<div class="row g-2">
 											<div class="col-6 col-md-3">
 												<label class="form-label text-90 mb-0">ต.ค.</label>
-												<input type="number" class="form-control" name="mon_10" step="0.1" min="0">
+												<input type="number" class="form-control" name="mon_10" step="any" min="0">
 											</div>
 											<div class="col-6 col-md-3">
 												<label class="form-label text-90 mb-0">พ.ย.</label>
-												<input type="number" class="form-control" name="mon_11" step="0.1" min="0">
+												<input type="number" class="form-control" name="mon_11" step="any" min="0">
 											</div>
 											<div class="col-6 col-md-3">
 												<label class="form-label text-90 mb-0">ธ.ค.</label>
-												<input type="number" class="form-control" name="mon_12" step="0.1" min="0">
+												<input type="number" class="form-control" name="mon_12" step="any" min="0">
 											</div>
 											<div class="col-6 col-md-3">
 												<label class="form-label text-90 mb-0">ม.ค.</label>
-												<input type="number" class="form-control" name="mon_01" step="0.1" min="0">
+												<input type="number" class="form-control" name="mon_01" step="any" min="0">
 											</div>
 											<div class="col-6 col-md-3">
 												<label class="form-label text-90 mb-0">ก.พ.</label>
-												<input type="number" class="form-control" name="mon_02" step="0.1" min="0">
+												<input type="number" class="form-control" name="mon_02" step="any" min="0">
 											</div>
 											<div class="col-6 col-md-3">
 												<label class="form-label text-90 mb-0">มี.ค.</label>
-												<input type="number" class="form-control" name="mon_03" step="0.1" min="0">
+												<input type="number" class="form-control" name="mon_03" step="any" min="0">
 											</div>
 											<div class="col-6 col-md-3">
 												<label class="form-label text-90 mb-0">เม.ย.</label>
-												<input type="number" class="form-control" name="mon_04" step="0.1" min="0">
+												<input type="number" class="form-control" name="mon_04" step="any" min="0">
 											</div>
 											<div class="col-6 col-md-3">
 												<label class="form-label text-90 mb-0">พ.ค.</label>
-												<input type="number" class="form-control" name="mon_05" step="0.1" min="0">
+												<input type="number" class="form-control" name="mon_05" step="any" min="0">
 											</div>
 											<div class="col-6 col-md-3">
 												<label class="form-label text-90 mb-0">มิ.ย.</label>
-												<input type="number" class="form-control" name="mon_06" step="0.1" min="0">
+												<input type="number" class="form-control" name="mon_06" step="any" min="0">
 											</div>
 											<div class="col-6 col-md-3">
 												<label class="form-label text-90 mb-0">ก.ค.</label>
-												<input type="number" class="form-control" name="mon_07" step="0.1" min="0">
+												<input type="number" class="form-control" name="mon_07" step="any" min="0">
 											</div>
 											<div class="col-6 col-md-3">
 												<label class="form-label text-90 mb-0">ส.ค.</label>
-												<input type="number" class="form-control" name="mon_08" step="0.1" min="0">
+												<input type="number" class="form-control" name="mon_08" step="any" min="0">
 											</div>
 											<div class="col-6 col-md-3">
 												<label class="form-label text-90 mb-0">ก.ย.</label>
-												<input type="number" class="form-control" name="mon_09" step="0.1" min="0">
+												<input type="number" class="form-control" name="mon_09" step="any" min="0">
 											</div>
 										</div>
 									</div>
@@ -21629,6 +21651,17 @@ if ($op === 'add_project') {
 						});
 					}
 
+					function plainNum(v){
+						if (v === undefined || v === null) return '';
+						var s = String(v).trim().replace(/,/g, '');
+						if (s === '') return '';
+						if (!/^-?\d+(\.\d+)?$/.test(s)) return String(v);
+						if (s.indexOf('.') >= 0) {
+							s = s.replace(/0+$/, '').replace(/\.$/, '');
+						}
+						if (s === '' || s === '-' || s === '-0') s = '0';
+						return s;
+					}
 					function fillFromPayload(p){
 						if (!p) return;
 						$('#kpiGoalType').val('update');
@@ -21637,9 +21670,10 @@ if ($op === 'add_project') {
 						$txtKpiUnit.val(p.kpi_unit || '');
 						$hidCodeKpi.val((p.code_kpi !== undefined && p.code_kpi !== null && p.code_kpi !== '') ? p.code_kpi : '0');
 						$hidCodeUnit.val((p.code_unit !== undefined && p.code_unit !== null && p.code_unit !== '') ? p.code_unit : '0');
-						$('#kpiProjectWeight').val(p.kpi_weight || '');
+						$('#kpiProjectWeight').val(plainNum(p.kpi_weight || ''));
 						['mon_01','mon_02','mon_03','mon_04','mon_05','mon_06','mon_07','mon_08','mon_09','mon_10','mon_11','mon_12'].forEach(function(name){
-							var v = (p[name] !== undefined && p[name] !== null) ? p[name] : '';
+							var v = (p[name] !== undefined && p[name] !== null) ? plainNum(p[name]) : '';
+							if (v === '0' || v === '-0') v = '';
 							var $el = $form.find('[name="'+name+'"]');
 							if ($el && $el.length) $el.val(v);
 						});
@@ -29727,6 +29761,7 @@ if ($op === 'add_project') {
 				</div>
 				<div class="modal-footer bg-light">
 					<button type="button" class="btn btn-outline-secondary pm-ro-memo-close" data-dismiss="modal" data-bs-dismiss="modal">ปิด</button>
+					<button type="button" class="btn btn-success font-weight-bold" id="pmRoMemoBtnConfirm"><i class="fa fa-paper-plane mr-1"></i> ส่งคำขออนุมัติดำเนินโครงการ</button>
 				</div>
 			</div>
 		</div>
@@ -32169,7 +32204,7 @@ if ($is_unit_admin) {
 											<i class="fa <?= htmlspecialchars($pm_action_icon, ENT_QUOTES, 'UTF-8') ?><?= !$can_edit_row ? ' mr-1' : '' ?>"></i> <?= htmlspecialchars($pm_action_label, ENT_QUOTES, 'UTF-8') ?>
 										</a>
 										<?php endif; ?>
-										<?php if ($pm_row_status === '0' && !(defined('PLAN_ADMIN') && PLAN_ADMIN)): ?>
+										<?php if ($pm_row_status === '0'): ?>
 											<button type="button" class="btn btn-outline-danger btn-xs" data-action="delete-project-draft" data-id="<?= (int)($row['id'] ?? 0) ?>">
 												<i class="fa fa-trash"></i> ลบ
 											</button>

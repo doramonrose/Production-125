@@ -3,6 +3,7 @@
 include_once(__DIR__ . '/../../config/config_db.php');
 include_once(__DIR__ . '/../fn/main_project.php');
 require_once __DIR__ . '/project_save_project_execute.php';
+require_once __DIR__ . '/project_save_consistency_execute.php';
 
 $page = isset($_GET['page']) ? trim((string)$_GET['page']) : '';
 $op   = isset($_GET['op']) ? trim((string)$_GET['op']) : '';
@@ -10,6 +11,11 @@ $op   = isset($_GET['op']) ? trim((string)$_GET['op']) : '';
 // POST save_project: ต้องจบด้วย JSON/HTML จาก handler เท่านั้น — ห้ามส่งออก CSS/HTML ของไฟล์นี้ก่อน (ทำให้ AJAX ขึ้น "เกิดข้อผิดพลาด" แม้บันทึกสำเร็จ)
 if ($op === 'save_project' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 	project_all_execute_save_project();
+	exit;
+}
+// POST ความสอดคล้อง ส่วนที่ 2: เหมือนกัน — ถ้าปล่อยให้พิมพ์ <style> ก่อน JSON หน้าจะขึ้น "เกิดข้อผิดพลาด" ทั้งที่บันทึกแล้ว
+if ($op === 'save_data_consistency_kpi_project' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+	project_all_execute_save_consistency_kpi();
 	exit;
 }
 ?>
@@ -9253,238 +9259,9 @@ if ($op === 'save_project' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
 			break;
 		case "save_data_consistency_kpi_project":
-
-			global $db_Project, $db_person, $db_pbmBudget, $db_KPI;
-			$consistency_is_ajax = !empty($_POST['ajax']) && (string)$_POST['ajax'] === '1';
-			if ($consistency_is_ajax) {
-				while (ob_get_level()) {
-					ob_end_clean();
-				}
-				header('Content-Type: application/json; charset=utf-8');
-			}
-			$s_staff = mysqli_query($db_person, "select * from staff where email='$_SESSION[r_email]'  and  code='$_SESSION[code]'");
-			$r_staff = mysqli_fetch_array($s_staff);
-			$page = $_GET['page'];
-			$status = '1';
-			$op_from = $_POST['op_from'];
-			$years_select = $_POST['years_select'];
-			$project_id = $_POST['project_id'];
-
-			$overview = $_POST['overview'] ?? '';
-			$code_consistency = $_POST['code_consistency'] ?? '';
-			$project_id    = (int)$_POST['project_id'];
-			$code_kpi_type = trim((string)($_POST['code_kpi_type'] ?? ''));
-			$staffId = (int)($r_staff['id'] ?? 0);
-			$pidEsc = mysqli_real_escape_string($db_Project, (string)$project_id);
-			$typeEsc = mysqli_real_escape_string($db_Project, $code_kpi_type);
-			$staffEsc = mysqli_real_escape_string($db_Project, (string)$staffId);
-			$detail_list   = $_POST['consistency_detail'] ?? [];
-			$sdgs_enabled  = function_exists('pm_sdgs_consistency_enabled') ? pm_sdgs_consistency_enabled($db_Project) : true;
-			if (!$sdgs_enabled) {
-				$detail_list = [];
-			}
-
-			$childKindSave = 'side';
-			if ($code_kpi_type !== '' && isset($db_KPI) && function_exists('getSetType')) {
-				$tRowSave = getSetType($db_KPI, $code_kpi_type);
-				if (is_array($tRowSave) && function_exists('kpi_type_child_kind')) {
-					$childKindSave = kpi_type_child_kind($tRowSave);
-				} elseif (is_array($tRowSave)) {
-					$childKindSave = ((string)($tRowSave['child_kind'] ?? '') === 'so') ? 'so' : 'side';
-				}
-			}
-
-			$setsSave = [];
-			$rawSets = $_POST['sets'] ?? null;
-			if (is_array($rawSets)) {
-				foreach ($rawSets as $rowSet) {
-					if (!is_array($rowSet)) {
-						continue;
-					}
-					$ap = trim((string)($rowSet['code_ap'] ?? ''));
-					$side = trim((string)($rowSet['code_side'] ?? ''));
-					$kpis = $rowSet['kpi_list'] ?? [];
-					if (!is_array($kpis)) {
-						$kpis = [];
-					}
-					$kpis = array_values(array_filter(array_map('strval', $kpis), static function ($v) {
-						return trim($v) !== '';
-					}));
-					if ($childKindSave === 'so') {
-						if ($ap === '') {
-							continue;
-						}
-						$setsSave[] = ['code_ap' => $ap, 'code_side' => '', 'kpi_list' => $kpis];
-					} else {
-						if ($side === '') {
-							continue;
-						}
-						$setsSave[] = ['code_ap' => '', 'code_side' => $side, 'kpi_list' => $kpis];
-					}
-				}
-			}
-			if (!$setsSave) {
-				$ap = trim((string)($_POST['code_ap'] ?? ''));
-				$side = trim((string)($_POST['code_side'] ?? ''));
-				$kpis = $_POST['kpi_list'] ?? [];
-				if (!is_array($kpis)) {
-					$kpis = [];
-				}
-				$kpis = array_values(array_filter(array_map('strval', $kpis), static function ($v) {
-					return trim($v) !== '';
-				}));
-				if ($childKindSave === 'so' && $ap !== '') {
-					$setsSave[] = ['code_ap' => $ap, 'code_side' => '', 'kpi_list' => $kpis];
-				} elseif ($childKindSave !== 'so' && $side !== '') {
-					$setsSave[] = ['code_ap' => '', 'code_side' => $side, 'kpi_list' => $kpis];
-				}
-			}
-
-			$type = $_POST['type'] ?? '';
-			$sql = false;
-			if ($type == "insert" || $type == "update") {
-				if ($code_kpi_type === '' || !$setsSave) {
-					if ($consistency_is_ajax) {
-						echo json_encode(['ok' => 0, 'msg' => 'กรุณาเลือกกรอบแผนและรายการอย่างน้อย 1 ชุด'], JSON_UNESCAPED_UNICODE);
-						exit;
-					}
-					$link = "?page=" . $page . '&op=' . $op_from . '&project_id=' . $project_id . '&years_select=' . $years_select . '&overview=' . $overview;
-					echo build_swal_error_redirect($link);
-					break;
-				}
-
-				$oldIds = [];
-				$qOld = mysqli_query($db_Project, "SELECT id FROM project_consistency WHERE project_id='$pidEsc' AND status!='99'");
-				if ($qOld) {
-					while ($or = mysqli_fetch_assoc($qOld)) {
-						$oid = (int)($or['id'] ?? 0);
-						if ($oid > 0) {
-							$oldIds[] = $oid;
-						}
-					}
-				}
-				mysqli_query(
-					$db_Project,
-					"UPDATE project_consistency SET status='99', staff_insert='$staffEsc', dates=NOW() WHERE project_id='$pidEsc' AND status!='99'"
-				);
-				if ($oldIds) {
-					$inOld = implode(',', $oldIds);
-					mysqli_query($db_Project, "UPDATE project_consistency_kpi SET status='99', staff_insert='$staffEsc', dates=NOW() WHERE code_project_consistency IN ($inOld)");
-					mysqli_query($db_Project, "UPDATE project_consistency_map SET status='99', staff_insert='$staffEsc', dates=NOW() WHERE code_project_consistency IN ($inOld)");
-				}
-
-				$sql = true;
-				$firstNewId = 0;
-				foreach ($setsSave as $oneSet) {
-					$apEsc = mysqli_real_escape_string($db_Project, (string)$oneSet['code_ap']);
-					$sideEsc = mysqli_real_escape_string($db_Project, (string)$oneSet['code_side']);
-					$ins = mysqli_query(
-						$db_Project,
-						"INSERT INTO project_consistency (
-							project_id, code_kpi_type, code_so, code_ap, code_side, status, staff_insert, dates
-						) VALUES (
-							'$pidEsc', '$typeEsc', '', '$apEsc', '$sideEsc', '1', '$staffEsc', NOW()
-						)"
-					);
-					if (!$ins) {
-						$sql = false;
-						break;
-					}
-					$newId = (int)mysqli_insert_id($db_Project);
-					if ($newId <= 0) {
-						$sql = false;
-						break;
-					}
-					if ($firstNewId <= 0) {
-						$firstNewId = $newId;
-					}
-					foreach ($oneSet['kpi_list'] as $kpi_id) {
-						$kpiEsc = mysqli_real_escape_string($db_Project, trim((string)$kpi_id));
-						if ($kpiEsc === '') {
-							continue;
-						}
-						mysqli_query(
-							$db_Project,
-							"INSERT INTO project_consistency_kpi(
-								code_project_consistency, code_kpi_detail, status, staff_insert, dates
-							) VALUES (
-								'$newId', '$kpiEsc', '1', '$staffEsc', NOW()
-							)"
-						);
-					}
-				}
-				if ($sql && $sdgs_enabled && $firstNewId > 0) {
-					foreach ($detail_list as $detail_id) {
-						$detail_id = trim((string)$detail_id);
-						if ($detail_id === '') {
-							continue;
-						}
-						$detailEsc = mysqli_real_escape_string($db_Project, $detail_id);
-						mysqli_query(
-							$db_Project,
-							"INSERT INTO project_consistency_map(
-								code_project_consistency, code_consistency_detail, status, staff_insert, dates
-							) VALUES (
-								'$firstNewId', '$detailEsc', '1', '$staffEsc', NOW()
-							)"
-						);
-					}
-				}
-			} else if ($type == "delete") {
-
-				$project_consistency_id = $_POST['project_consistency_id'];
-				$sql = mysqli_query(
-					$db_Project,
-					"UPDATE project_consistency 
-						SET 
-							status = '99',
-							staff_insert = '$r_staff[id]',
-							dates = NOW()						
-						WHERE project_id = '$project_id'"
-				);
-				//สำเร็จ แล้วค่อย insert project_consistency_map
-				if ($sql) {
-					$sql_now = mysqli_query(
-						$db_Project,
-						"UPDATE project_consistency_kpi 
-						 SET status = '99',staff_insert = '$r_staff[id]', dates = NOW()
-    					 WHERE code_project_consistency = '$project_consistency_id' "
-					);
-					mysqli_query(
-						$db_Project,
-						"UPDATE project_consistency_map 
-						 SET status = '99',staff_insert = '$r_staff[id]', dates = NOW()
-    					 WHERE code_project_consistency = '$project_consistency_id' "
-					);
-				}
-			}
-
-
-			if ($consistency_is_ajax) {
-				if ($sql) {
-					$link = '?page=' . rawurlencode($page) . '&op=' . rawurlencode($op_from) . '&project_id=' . (int)$project_id . '&years_select=' . rawurlencode($years_select) . '&overview=' . rawurlencode($overview);
-					echo json_encode(['ok' => 1, 'redirect' => $link], JSON_UNESCAPED_UNICODE);
-				} else {
-					$em = mysqli_error($db_Project);
-					echo json_encode([
-						'ok' => 0,
-						'msg' => $em !== '' ? $em : 'บันทึกความสอดคล้องไม่สำเร็จ',
-					], JSON_UNESCAPED_UNICODE);
-				}
-				exit;
-			}
-
-			if ($sql) {
-				// echo "U";
-				$link = "?page=" . $page . '&op=' . $op_from . '&project_id=' . $project_id . '&years_select=' . $years_select . '&overview=' . $overview;
-				echo build_swal_success_redirect($link);
-			} else {
-				$link = "?page=" . $page . '&op=' . $op_from . '&project_id=' . $project_id . '&years_select=' . $years_select . '&overview=' . $overview;
-				echo build_swal_error_redirect($link);
-			}
-
-
+			project_all_execute_save_consistency_kpi();
 			break;
+
 		case "submit_project":
 
 			global $db_Project, $db_person, $db_pbmBudget;
