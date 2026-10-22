@@ -8326,10 +8326,12 @@ function getOverviewProjectList($db_Project, $years_select, $code_unit_filter = 
                p.result_report_submitted_at, p.result_report_completed_at,
                IFNULL((SELECT SUM(pa.total) FROM project_activity_budget pa WHERE pa.code_pre_project = p.id AND pa.status != '99'), 0) AS budget_total,
                IFNULL((
-                   SELECT SUM(CAST(IFNULL(bd.total, 0) AS DECIMAL(18, 2)))
-                   FROM project_activity_budget_detail bd
-                   WHERE bd.code_pre_project = p.id
-                     AND (bd.status IS NULL OR bd.status = '' OR bd.status != '99')
+                   SELECT SUM(CAST(IFNULL(l.amount, 0) AS DECIMAL(18, 2)))
+                   FROM project_budget_disburse_line l
+                   INNER JOIN project_budget_disburse_report r ON r.id = l.report_id
+                   WHERE r.project_id = p.id
+                     AND l.status = '1'
+                     AND (r.status IS NULL OR r.status = '' OR r.status != '99')
                ), 0) AS disburse_total
         FROM pre_project p
         WHERE p.status = '1' AND p.year_project = ?

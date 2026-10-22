@@ -456,6 +456,14 @@ h1, h2, h3, h4, h5, h6,
 	pointer-events: none;
 	user-select: none;
 }
+#sidebar .nav-item.pm-nav-divider{
+	pointer-events: none;
+	list-style: none;
+	height: 0;
+	margin: .7rem 1.15rem .45rem;
+	padding: 0;
+	border-top: 1px solid rgba(255,255,255,.42);
+}
 #sidebar .nav-item.pm-nav-group-title > .pm-nav-group-label{
 	cursor: default;
 	font-weight: 800;

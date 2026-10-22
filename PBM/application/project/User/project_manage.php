@@ -10226,18 +10226,62 @@ if ($op === 'delete_draft_project_ajax') {
 			exit;
 		}
 
-		$chk = @mysqli_query($db_Project, "SELECT id, status_project, status FROM pre_project WHERE id='".(int)$project_id."' LIMIT 1");
+		$isPlanAdminDelete = defined('PLAN_ADMIN') && PLAN_ADMIN;
+		$chk = @mysqli_query($db_Project, "SELECT id, year_project, code_pre_project, name_project, code_unit, status_project, status, notify_result, staff_insert FROM pre_project WHERE id='".(int)$project_id."' LIMIT 1");
 		$row = $chk ? mysqli_fetch_assoc($chk) : null;
 		if (!$row) {
 			echo json_encode(['ok' => 0, 'msg' => 'ไม่พบโครงการ'], JSON_UNESCAPED_UNICODE);
 			exit;
 		}
-		if ((string)($row['status_project'] ?? '') !== '0') {
+		if ((string)($row['status'] ?? '') === '99') {
+			echo json_encode(['ok' => 0, 'msg' => 'โครงการนี้ถูกลบแล้ว'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		if (!$isPlanAdminDelete && (string)($row['status_project'] ?? '') !== '0') {
 			echo json_encode(['ok' => 0, 'msg' => 'ลบได้เฉพาะโครงการสถานะร่างเท่านั้น'], JSON_UNESCAPED_UNICODE);
 			exit;
 		}
-		$ok = @mysqli_query($db_Project, "UPDATE pre_project SET status='99', dates=NOW(), staff_insert='".(int)$sid."' WHERE id='".(int)$project_id."' AND status_project='0' LIMIT 1");
-		if (!$ok) {
+		@mysqli_query($db_Project, "CREATE TABLE IF NOT EXISTS project_delete_log (
+			id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+			project_id INT UNSIGNED NOT NULL,
+			year_project VARCHAR(10) NULL,
+			code_pre_project VARCHAR(64) NULL,
+			name_project VARCHAR(500) NULL,
+			code_unit VARCHAR(32) NULL,
+			status_project_before VARCHAR(8) NULL,
+			notify_result VARCHAR(120) NULL,
+			owner_staff_id INT UNSIGNED NULL,
+			actor_staff_id INT UNSIGNED NULL,
+			actor_staff_code VARCHAR(32) NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (id),
+			KEY idx_pdl_project (project_id, created_at),
+			KEY idx_pdl_actor (actor_staff_id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+		$logYear = mysqli_real_escape_string($db_Project, (string)($row['year_project'] ?? ''));
+		$logCode = mysqli_real_escape_string($db_Project, (string)($row['code_pre_project'] ?? ''));
+		$logName = mysqli_real_escape_string($db_Project, (string)($row['name_project'] ?? ''));
+		$logUnit = mysqli_real_escape_string($db_Project, (string)($row['code_unit'] ?? ''));
+		$logSt = mysqli_real_escape_string($db_Project, (string)($row['status_project'] ?? ''));
+		$logNotify = mysqli_real_escape_string($db_Project, (string)($row['notify_result'] ?? ''));
+		$logOwner = (int)($row['staff_insert'] ?? 0);
+		$logActorCode = mysqli_real_escape_string($db_Project, $staff_code);
+		$logged = @mysqli_query(
+			$db_Project,
+			"INSERT INTO project_delete_log
+				(project_id, year_project, code_pre_project, name_project, code_unit, status_project_before, notify_result, owner_staff_id, actor_staff_id, actor_staff_code, created_at)
+			 VALUES
+				('" . (int)$project_id . "', '$logYear', '$logCode', '$logName', '$logUnit', '$logSt', '$logNotify', '$logOwner', '" . (int)$sid . "', '$logActorCode', NOW())"
+		);
+		if (!$logged) {
+			echo json_encode(['ok' => 0, 'msg' => (mysqli_error($db_Project) ?: 'บันทึกประวัติการลบไม่สำเร็จ')], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		$whereDelete = $isPlanAdminDelete
+			? "id='" . (int)$project_id . "' AND status!='99'"
+			: "id='" . (int)$project_id . "' AND status_project='0'";
+		$ok = @mysqli_query($db_Project, "UPDATE pre_project SET status='99', dates=NOW() WHERE $whereDelete LIMIT 1");
+		if (!$ok || mysqli_affected_rows($db_Project) < 1) {
 			echo json_encode(['ok' => 0, 'msg' => (mysqli_error($db_Project) ?: 'ลบไม่สำเร็จ')], JSON_UNESCAPED_UNICODE);
 			exit;
 		}
@@ -32204,8 +32248,14 @@ if ($is_unit_admin) {
 											<i class="fa <?= htmlspecialchars($pm_action_icon, ENT_QUOTES, 'UTF-8') ?><?= !$can_edit_row ? ' mr-1' : '' ?>"></i> <?= htmlspecialchars($pm_action_label, ENT_QUOTES, 'UTF-8') ?>
 										</a>
 										<?php endif; ?>
-										<?php if ($pm_row_status === '0'): ?>
-											<button type="button" class="btn btn-outline-danger btn-xs" data-action="delete-project-draft" data-id="<?= (int)($row['id'] ?? 0) ?>">
+										<?php if ($pm_row_status === '0' || (defined('PLAN_ADMIN') && PLAN_ADMIN)): ?>
+											<button type="button"
+												class="btn btn-outline-danger btn-xs"
+												data-action="delete-project-draft"
+												data-id="<?= (int)($row['id'] ?? 0) ?>"
+												data-code="<?= htmlspecialchars((string)($row['code_pre_project'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+												data-name="<?= htmlspecialchars((string)($row['name_project'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+												data-status-label="<?= htmlspecialchars((string)($status_txt ?? ''), ENT_QUOTES, 'UTF-8') ?>">
 												<i class="fa fa-trash"></i> ลบ
 											</button>
 										<?php endif ?>
@@ -34352,10 +34402,21 @@ if ($is_unit_admin) {
 				if (typeof Swal !== 'undefined') Swal.fire({ icon:'error', title:'เกิดข้อผิดพลาด', text:'ลบไม่สำเร็จ' });
 			});
 		};
+		if (typeof window.PM_PLAN_ADMIN === 'undefined') {
+			window.PM_PLAN_ADMIN = <?= (defined('PLAN_ADMIN') && PLAN_ADMIN) ? 'true' : 'false' ?>;
+		}
+		var code = String($(this).attr('data-code') || '').trim();
+		var name = String($(this).attr('data-name') || '').trim();
+		var stLabel = String($(this).attr('data-status-label') || '').trim();
+		var isAdmin = !!window.PM_PLAN_ADMIN;
+		var title = isAdmin ? 'ยืนยันการลบโครงการ?' : 'ยืนยันการลบโครงการร่าง?';
+		var text = isAdmin
+			? ((code ? code + ' ' : '') + name + (stLabel ? ' (' + stLabel + ')' : '') + '\nโครงการจะหายจากรายการ และระบบเก็บประวัติการลบไว้')
+			: '';
 		if (typeof Swal !== 'undefined') {
-			Swal.fire({ icon:'warning', title:'ยืนยันการลบโครงการร่าง?', showCancelButton:true, confirmButtonText:'ลบ', cancelButtonText:'ยกเลิก' })
+			Swal.fire({ icon:'warning', title: title, text: text, showCancelButton:true, confirmButtonText:'ลบ', cancelButtonText:'ยกเลิก' })
 				.then(function(r){ if (r.isConfirmed) run(); });
-		} else if (confirm('ยืนยันการลบโครงการร่าง?')) {
+		} else if (confirm(title + (text ? '\n' + text : ''))) {
 			run();
 		}
 	});

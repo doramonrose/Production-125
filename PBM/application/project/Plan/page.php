@@ -43,13 +43,13 @@ if ($row = mysqli_fetch_array($result)) {
 	if ($op === '' && isset($_GET['cp'])) {
 		$op = trim((string) $_GET['cp']);
 	}
-	$allowed_pages = ['dashboard', 'exec_dashboard', 'setting', 'pre_project', 'project', 'tools', 'project_all', 'project_manage', 'project_approve'];
+	$allowed_pages = ['dashboard', 'exec_dashboard', 'setting', 'pre_project', 'project', 'tools', 'project_all', 'project_manage', 'project_approve', 'project_deleted'];
 	if ($page === '' || !in_array($page, $allowed_pages, true)) {
 		$page = 'dashboard';
 	}
-	$pm_page_wide = in_array($page, ['project_manage', 'project_approve', 'project_all', 'project_follow'], true);
+	$pm_page_wide = in_array($page, ['project_manage', 'project_approve', 'project_all', 'project_follow', 'project_deleted'], true);
 	// Plan = Admin owner system: ใช้กับหน้าโครงการ (รวม AJAX op=render_* ที่ยิงกลับมาที่ page.php)
-	if (in_array($page, ['project_all', 'project_manage', 'project_approve', 'project_follow'], true)) {
+	if (in_array($page, ['project_all', 'project_manage', 'project_approve', 'project_follow', 'project_deleted'], true)) {
 		if (!defined('PLAN_ADMIN')) define('PLAN_ADMIN', true);
 	}
 
@@ -149,6 +149,9 @@ if ($row = mysqli_fetch_array($result)) {
 
 	if ($page == "project_all") {
 		$page_name = pm_page_crumb('โครงการทั้งหมด');
+	}
+	if ($page == "project_deleted") {
+		$page_name = pm_page_crumb('โครงการที่ถูกลบ');
 	}
 	if ($page == "project_manage") {
 		$page_name = pm_page_crumb('โครงการของฉัน');
@@ -777,6 +780,17 @@ if ($row = mysqli_fetch_array($result)) {
 										</a>
 										<b class="sub-arrow"></b>
 									</li>
+									<li class="nav-item pm-nav-child <?php if ($page == 'project_deleted') {
+															echo "active";
+														} ?>">
+										<a href="?page=project_deleted" class="nav-link">
+											<i class="nav-icon fa fa-trash-alt"></i>
+											<span class="nav-text fadeable">
+												<span>โครงการที่ถูกลบ</span>
+											</span>
+										</a>
+										<b class="sub-arrow"></b>
+									</li>
 									<?php
 									$pm_appr_menu_items = [
 										'include' => ['พิจารณาแผนงาน', 'fa-clipboard-list'],
@@ -821,6 +835,7 @@ if ($row = mysqli_fetch_array($result)) {
 										</div>
 										<b class="sub-arrow"></b>
 									</li>
+									<li class="nav-item pm-nav-divider" aria-hidden="true"></li>
 									<li class="nav-item">
 										<a href="../User/page.php" class="nav-link" title="ไปหน้าผู้ใช้งาน">
 											<i class="nav-icon fa fa-user"></i>
