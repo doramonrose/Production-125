@@ -328,12 +328,13 @@ if ($pm_appr_route_op === 'get_request_detail') {
 						FROM set_department_admin sda
 						WHERE (sda.staff_admin = '".$staffCodeEscPerm."' OR sda.staff_admin = '".(int)$sid."')
 						  AND (
-							sda.dep_code = p.job_code
-							OR sda.dep_code = p.dep_code
-							OR p.job_code LIKE CONCAT(sda.dep_code, '%')
-							OR sda.job_code = p.job_code
-							OR sda.job_code = p.dep_code
-							OR p.job_code LIKE CONCAT(sda.job_code, '%')
+							sda.unit_code = p.code_unit
+							OR EXISTS (
+								SELECT 1 FROM set_unit su
+								WHERE su.status != '99'
+								  AND CAST(su.id AS CHAR) = sda.unit_code
+								  AND (CAST(su.id AS CHAR) = IFNULL(p.code_unit,'') OR IFNULL(su.code,'') = IFNULL(p.code_unit,''))
+							)
 						  )
 					)
 					OR ('".$codeUnitEscPerm."' <> '' AND IFNULL(p.code_unit,'') <> '' AND p.code_unit = '".$codeUnitEscPerm."')
@@ -4404,12 +4405,13 @@ if ($pm_appr_is_plan_admin) {
 							FROM set_department_admin sda
 							WHERE (sda.staff_admin = '".$staffCodeEsc."' OR sda.staff_admin = '".$sidEsc."')
 							  AND (
-								sda.dep_code = p.job_code
-								OR sda.dep_code = p.dep_code
-								OR p.job_code LIKE CONCAT(sda.dep_code, '%')
-								OR sda.job_code = p.job_code
-								OR sda.job_code = p.dep_code
-								OR p.job_code LIKE CONCAT(sda.job_code, '%')
+								sda.unit_code = p.code_unit
+								OR EXISTS (
+									SELECT 1 FROM set_unit su
+									WHERE su.status != '99'
+									  AND CAST(su.id AS CHAR) = sda.unit_code
+									  AND (CAST(su.id AS CHAR) = IFNULL(p.code_unit,'') OR IFNULL(su.code,'') = IFNULL(p.code_unit,''))
+								)
 							  )
 						)
 						OR ('".$codeUnitEsc."' <> '' AND IFNULL(p.code_unit,'') <> '' AND p.code_unit = '".$codeUnitEsc."')
@@ -4437,12 +4439,13 @@ if ($pm_appr_is_plan_admin) {
 			FROM set_department_admin sda
 			WHERE (sda.staff_admin = '".$staffCodeEsc."' OR sda.staff_admin = '".$sidEsc."')
 			  AND (
-				sda.dep_code = p.job_code
-				OR sda.dep_code = p.dep_code
-				OR p.job_code LIKE CONCAT(sda.dep_code, '%')
-				OR sda.job_code = p.job_code
-				OR sda.job_code = p.dep_code
-				OR p.job_code LIKE CONCAT(sda.job_code, '%')
+				sda.unit_code = p.code_unit
+				OR EXISTS (
+					SELECT 1 FROM set_unit su
+					WHERE su.status != '99'
+					  AND CAST(su.id AS CHAR) = sda.unit_code
+					  AND (CAST(su.id AS CHAR) = IFNULL(p.code_unit,'') OR IFNULL(su.code,'') = IFNULL(p.code_unit,''))
+				)
 			  )
 		)
 		OR ('".$codeUnitEsc."' <> '' AND IFNULL(p.code_unit,'') <> '' AND p.code_unit = '".$codeUnitEsc."')
