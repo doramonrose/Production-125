@@ -71,6 +71,13 @@ if (!function_exists('project_all_execute_save_consistency_kpi')) {
 				}
 				$ap = trim((string)($rowSet['code_ap'] ?? ''));
 				$side = trim((string)($rowSet['code_side'] ?? ''));
+				$subprocess = trim((string)($rowSet['code_subprocess'] ?? ''));
+				$kpiOther = trim((string)($rowSet['kpi_other'] ?? ''));
+				if (function_exists('mb_substr')) {
+					$kpiOther = mb_substr($kpiOther, 0, 500);
+				} else {
+					$kpiOther = substr($kpiOther, 0, 500);
+				}
 				$kpis = $rowSet['kpi_list'] ?? [];
 				if (!is_array($kpis)) {
 					$kpis = [];
@@ -82,12 +89,12 @@ if (!function_exists('project_all_execute_save_consistency_kpi')) {
 					if ($ap === '') {
 						continue;
 					}
-					$setsSave[] = ['code_ap' => $ap, 'code_side' => '', 'kpi_list' => $kpis];
+					$setsSave[] = ['code_ap' => $ap, 'code_side' => '', 'code_subprocess' => '', 'kpi_other' => $kpiOther, 'kpi_list' => $kpis];
 				} else {
 					if ($side === '') {
 						continue;
 					}
-					$setsSave[] = ['code_ap' => '', 'code_side' => $side, 'kpi_list' => $kpis];
+					$setsSave[] = ['code_ap' => '', 'code_side' => $side, 'code_subprocess' => $subprocess, 'kpi_other' => $kpiOther, 'kpi_list' => $kpis];
 				}
 			}
 		}
@@ -102,9 +109,9 @@ if (!function_exists('project_all_execute_save_consistency_kpi')) {
 				return trim($v) !== '';
 			}));
 			if ($childKindSave === 'so' && $ap !== '') {
-				$setsSave[] = ['code_ap' => $ap, 'code_side' => '', 'kpi_list' => $kpis];
+				$setsSave[] = ['code_ap' => $ap, 'code_side' => '', 'code_subprocess' => '', 'kpi_list' => $kpis];
 			} elseif ($childKindSave !== 'so' && $side !== '') {
-				$setsSave[] = ['code_ap' => '', 'code_side' => $side, 'kpi_list' => $kpis];
+				$setsSave[] = ['code_ap' => '', 'code_side' => $side, 'code_subprocess' => trim((string)($_POST['code_subprocess'] ?? '')), 'kpi_list' => $kpis];
 			}
 		}
 
@@ -145,15 +152,33 @@ if (!function_exists('project_all_execute_save_consistency_kpi')) {
 
 			$sql = true;
 			$firstNewId = 0;
+			if (function_exists('pm_ensure_project_consistency_subprocess')) {
+				pm_ensure_project_consistency_subprocess($db_Project);
+			}
+			if (function_exists('pm_ensure_project_consistency_kpi_other')) {
+				pm_ensure_project_consistency_kpi_other($db_Project);
+			}
+			$hasSubCol = false;
+			$qSubCol = @mysqli_query($db_Project, "SHOW COLUMNS FROM project_consistency LIKE 'code_subprocess'");
+			$hasSubCol = ($qSubCol && mysqli_num_rows($qSubCol) > 0);
+			$hasOtherCol = false;
+			$qOtherCol = @mysqli_query($db_Project, "SHOW COLUMNS FROM project_consistency LIKE 'kpi_other'");
+			$hasOtherCol = ($qOtherCol && mysqli_num_rows($qOtherCol) > 0);
 			foreach ($setsSave as $oneSet) {
 				$apEsc = mysqli_real_escape_string($db_Project, (string)$oneSet['code_ap']);
 				$sideEsc = mysqli_real_escape_string($db_Project, (string)$oneSet['code_side']);
+				$subEsc = mysqli_real_escape_string($db_Project, (string)($oneSet['code_subprocess'] ?? ''));
+				$otherEsc = mysqli_real_escape_string($db_Project, (string)($oneSet['kpi_other'] ?? ''));
+				$subSqlCol = $hasSubCol ? ', code_subprocess' : '';
+				$subSqlVal = $hasSubCol ? (", '" . $subEsc . "'") : '';
+				$otherSqlCol = $hasOtherCol ? ', kpi_other' : '';
+				$otherSqlVal = $hasOtherCol ? (", '" . $otherEsc . "'") : '';
 				$ins = mysqli_query(
 					$db_Project,
 					"INSERT INTO project_consistency (
-						project_id, code_kpi_type, code_so, code_ap, code_side, status, staff_insert, dates
+						project_id, code_kpi_type, code_so, code_ap, code_side{$subSqlCol}{$otherSqlCol}, status, staff_insert, dates
 					) VALUES (
-						'$pidEsc', '$typeEsc', '', '$apEsc', '$sideEsc', '1', '$staffEsc', NOW()
+						'$pidEsc', '$typeEsc', '', '$apEsc', '$sideEsc'{$subSqlVal}{$otherSqlVal}, '1', '$staffEsc', NOW()
 					)"
 				);
 				if (!$ins) {

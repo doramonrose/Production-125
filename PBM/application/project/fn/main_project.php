@@ -7972,6 +7972,40 @@ function getSideList($db)
     return pm_dedupe_set_rows_by_name(fetchAllAssoc($db, "SELECT * FROM set_side WHERE status='1' ORDER BY id ASC"));
 }
 
+function pm_ensure_project_consistency_kpi_other($db): void
+{
+	if (!($db instanceof mysqli)) {
+		return;
+	}
+	static $done = false;
+	if ($done) {
+		return;
+	}
+	$done = true;
+	$q = @mysqli_query($db, "SHOW COLUMNS FROM project_consistency LIKE 'kpi_other'");
+	if ($q && mysqli_num_rows($q) > 0) {
+		return;
+	}
+	@mysqli_query($db, "ALTER TABLE project_consistency ADD COLUMN kpi_other VARCHAR(500) NULL DEFAULT NULL");
+}
+
+function pm_ensure_project_consistency_subprocess($db): void
+{
+	if (!($db instanceof mysqli)) {
+		return;
+	}
+	static $done = false;
+	if ($done) {
+		return;
+	}
+	$done = true;
+	$q = @mysqli_query($db, "SHOW COLUMNS FROM project_consistency LIKE 'code_subprocess'");
+	if ($q && mysqli_num_rows($q) > 0) {
+		return;
+	}
+	@mysqli_query($db, "ALTER TABLE project_consistency ADD COLUMN code_subprocess INT NULL DEFAULT NULL AFTER code_side");
+}
+
 // Project header consistency
 function getProjectConsistencyRow($db, $project_id)
 {
@@ -8260,6 +8294,11 @@ function getKpiYearIndicatorSelect($db, $filter = [])
         }
         $where[] = '(' . implode(' OR ', $apParts) . ')';
     }
+    $subprocess_val = isset($filter['subprocess']) ? trim((string)$filter['subprocess']) : '';
+    if ($subprocess_val !== '' && $subprocess_val !== '0') {
+        $sp = (int)$subprocess_val;
+        $where[] = "(yi.code_subprocess={$sp} OR yi.code_subprocess IS NULL OR yi.code_subprocess=0)";
+    }
     $side_val = isset($filter['side']) ? trim((string)$filter['side']) : '';
     if ($side_val !== '') {
         $sideIds = $collectIds($db, 'set_side', $side_val);
@@ -8277,7 +8316,8 @@ function getKpiYearIndicatorSelect($db, $filter = [])
 
     $data = $run($where);
     // ถ้าเลือกด้าน/AP แล้วไม่พบ: ผ่อนเฉพาะ type+ปี (ไม่ดึงทั้งปีข้ามกรอบแผน)
-    $hasLevel2 = ($ap_val !== '' || $side_val !== '');
+    // เลือกกระบวนการย่อยแล้วไม่ผ่อน เพื่อไม่ดึงตัวชี้วัดของกระบวนการอื่น
+    $hasLevel2 = ($ap_val !== '' || $side_val !== '') && ($subprocess_val === '' || $subprocess_val === '0');
     if (empty($data) && $hasLevel2 && $typeRaw !== '' && $filterYear !== '') {
         $whereFallback = ["yi.status='1'"];
         if ($exportFilter !== '') {

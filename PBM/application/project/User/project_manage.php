@@ -11482,6 +11482,8 @@ if ($op === 'add_project') {
 	$consistency_side_by_type = [];
 	$consistency_so_by_type = [];
 	$consistency_ap_by_so = [];
+	$consistency_subprocess_by_side = [];
+	$consistency_subprocess_name = [];
 	$consistency_current = null;
 	$consistency_rows = [];
 	$consistency_saved_sets = [];
@@ -11576,6 +11578,38 @@ if ($op === 'add_project') {
 				$consistency_ap_by_so[$soKey] = array_values($aps);
 			}
 		}
+		$qSub = @mysqli_query(
+			$db_KPI,
+			"SELECT id, code_side, name
+			 FROM set_subprocess
+			 WHERE status = '1'
+			   AND (kpi_year = '{$yrEsc}' OR kpi_year = '{$yr2Esc}')
+			 ORDER BY code_side ASC, sort_order ASC, id ASC"
+		);
+		if ($qSub) {
+			while ($sr = mysqli_fetch_assoc($qSub)) {
+				$sideKey = (string)(int)($sr['code_side'] ?? 0);
+				$subId = (string)(int)($sr['id'] ?? 0);
+				$subName = trim((string)($sr['name'] ?? ''));
+				if ($sideKey === '0' || $subId === '0' || $subName === '') {
+					continue;
+				}
+				if (!isset($consistency_subprocess_by_side[$sideKey])) {
+					$consistency_subprocess_by_side[$sideKey] = [];
+				}
+				$consistency_subprocess_by_side[$sideKey][] = [
+					'id' => $subId,
+					'name' => $subName,
+				];
+				$consistency_subprocess_name[$subId] = $subName;
+			}
+		}
+		if (function_exists('pm_ensure_project_consistency_subprocess')) {
+			pm_ensure_project_consistency_subprocess($db_Project);
+		}
+		if (function_exists('pm_ensure_project_consistency_kpi_other')) {
+			pm_ensure_project_consistency_kpi_other($db_Project);
+		}
 		$consistency_rows = function_exists('getProjectConsistencyRows')
 			? getProjectConsistencyRows($db_Project, $edit_project_id)
 			: [];
@@ -11596,6 +11630,8 @@ if ($op === 'add_project') {
 				'code_side' => (string)($cRow['code_side'] ?? ''),
 				'code_so' => (string)($cRow['code_so'] ?? ''),
 				'code_ap' => (string)($cRow['code_ap'] ?? ''),
+				'code_subprocess' => (string)($cRow['code_subprocess'] ?? ''),
+				'kpi_other' => trim((string)($cRow['kpi_other'] ?? '')),
 				'kpis' => $kpiIds,
 			];
 		}
@@ -16768,9 +16804,18 @@ if ($op === 'add_project') {
 									$kpiNames[] = (string)($kpi['name'] ?? ('ID:' . ($kpi_item['code_kpi_detail'] ?? '')));
 								}
 							}
+							$kpiOtherShow = trim((string)($cRow['kpi_other'] ?? ''));
+							if ($kpiOtherShow !== '') {
+								$kpiNames[] = $kpiOtherShow;
+							}
+							$subIdShow = trim((string)($cRow['code_subprocess'] ?? ''));
+							$subNameShow = ($subIdShow !== '' && isset($consistency_subprocess_name[$subIdShow]))
+								? $consistency_subprocess_name[$subIdShow]
+								: '';
 							$consistency_display_sets[] = [
 								'label' => (string)($copy['level2Label'] ?? $consUi['level2Label']),
 								'name' => $setName,
+								'subprocess' => $subNameShow,
 								'kpis' => $kpiNames,
 							];
 							if ($setIdx === 0) {
@@ -16823,6 +16868,7 @@ if ($op === 'add_project') {
 										</div>
 										<?php
 										$joined_level2 = [];
+										$joined_subprocess = [];
 										$joined_kpis = [];
 										$seen_kpi_nm = [];
 										if (!empty($consistency_display_sets)) {
@@ -16830,6 +16876,10 @@ if ($op === 'add_project') {
 												$nm = trim((string)($dSet['name'] ?? ''));
 												if ($nm !== '') {
 													$joined_level2[] = $nm;
+												}
+												$spn = trim((string)($dSet['subprocess'] ?? ''));
+												if ($spn !== '') {
+													$joined_subprocess[] = $spn;
 												}
 												foreach ((array)($dSet['kpis'] ?? []) as $kn) {
 													$kn = trim((string)$kn);
@@ -16848,6 +16898,12 @@ if ($op === 'add_project') {
 											<div class="pm-consistency-label"><?= htmlspecialchars($consUi['level2Label'], ENT_QUOTES, 'UTF-8') ?><?php if (!empty($pm_show_section_required_hints)): ?> <span class="text-danger">*</span><?php endif ?> :</div>
 											<div class="pm-consistency-value"><?= htmlspecialchars($joined_level2 ? implode(', ', $joined_level2) : '-') ?></div>
 										</div>
+										<?php if ($consGroup === 'mission'): ?>
+										<div class="pm-consistency-row">
+											<div class="pm-consistency-label">กระบวนการย่อย :</div>
+											<div class="pm-consistency-value"><?= htmlspecialchars(!empty($joined_subprocess) ? implode(', ', $joined_subprocess) : '-') ?></div>
+										</div>
+										<?php endif; ?>
 										<div class="pm-consistency-row">
 											<div class="pm-consistency-label">ตัวชี้วัดเชิงพันธกิจ/ตัวชี้วัดเชิงกลยุทธ์ (KR)<?php if (!empty($pm_show_section_required_hints)): ?> <span class="text-danger">*</span><?php endif ?> :</div>
 											<div class="pm-consistency-value"><?= htmlspecialchars($joined_kpis ? implode(', ', $joined_kpis) : '-') ?></div>
@@ -23198,6 +23254,7 @@ if ($op === 'add_project') {
 					var projectId = <?= (int)$edit_project_id ?>;
 					var yearValStatic = <?= json_encode((string)$years_select, JSON_UNESCAPED_UNICODE) ?>;
 					var sideByType = <?= json_encode($consistency_side_by_type, JSON_UNESCAPED_UNICODE) ?>;
+					var subprocessBySide = <?= json_encode($consistency_subprocess_by_side, JSON_UNESCAPED_UNICODE) ?>;
 					var soByType = <?= json_encode($consistency_so_by_type, JSON_UNESCAPED_UNICODE) ?>;
 					var apBySo = <?= json_encode($consistency_ap_by_so, JSON_UNESCAPED_UNICODE) ?>;
 					var allAps = <?= json_encode(array_values(array_map(static function ($ap) {
@@ -23328,6 +23385,8 @@ if ($op === 'add_project') {
 							return {
 								code_ap: String(s.code_ap || ''),
 								code_side: String(s.code_side || ''),
+								code_subprocess: String(s.code_subprocess || ''),
+								kpi_other: String(s.kpi_other || ''),
 								kpis: Array.isArray(s.kpis) ? s.kpis.slice() : []
 							};
 						});
@@ -23354,7 +23413,7 @@ if ($op === 'add_project') {
 							if (addWrap) addWrap.style.display = 'none';
 							return;
 						}
-						if (!setState.length) setState = [{ code_ap: '', code_side: '', kpis: [] }];
+						if (!setState.length) setState = [{ code_ap: '', code_side: '', code_subprocess: '', kpi_other: '', kpis: [] }];
 						var copy0 = setCopy(true);
 						if (addBtn) addBtn.textContent = copy0.addBtn;
 						if (addWrap) addWrap.style.display = 'block';
@@ -23380,6 +23439,22 @@ if ($op === 'add_project') {
 							}
 							html += '</div>';
 							html += '<select class="form-control mb-3 pm-cons-set-select" name="'+esc(selName)+'" data-set-index="'+idx+'">'+optionHtml(items, selVal, copy.placeholder)+'</select>';
+							if (typeGroup() === 'mission' && kind !== 'so') {
+								var subItems = (subprocessBySide && subprocessBySide[String(selVal)]) ? subprocessBySide[String(selVal)].slice() : [];
+								var subVal = String(st.code_subprocess || '');
+								if (subVal && !subItems.some(function(it){ return String(it.id) === subVal; })) {
+									subItems.push({ id: subVal, name: 'กระบวนการย่อยที่เลือกไว้' });
+								}
+								html += '<label class="font-weight-bold mb-0">กระบวนการย่อย</label>';
+								html += '<div class="pm-cons-hint">แสดงตามพันธกิจที่สนับสนุน</div>';
+								if (!selVal) {
+									html += '<div class="alert alert-info text-center mb-3">กรุณาเลือกพันธกิจที่สนับสนุนก่อน</div>';
+								} else if (!subItems.length) {
+									html += '<div class="alert alert-warning text-center mb-3">ไม่พบกระบวนการย่อยของพันธกิจนี้</div>';
+								} else {
+									html += '<select class="form-control mb-3 pm-cons-subprocess" name="sets['+idx+'][code_subprocess]" data-set-index="'+idx+'">'+optionHtml(subItems, subVal, '- เลือกกระบวนการย่อย -')+'</select>';
+								}
+							}
 							html += '<label class="font-weight-bold">ตัวชี้วัด</label>';
 							html += '<div class="border rounded p-3 bg-light pm-cons-kpi-box" data-set-index="'+idx+'"><div class="alert alert-info text-center mb-0">'+esc(copy.need)+'</div></div>';
 							html += '</div>';
@@ -23387,10 +23462,23 @@ if ($op === 'add_project') {
 						wrap.innerHTML = html;
 						setState.forEach(function(st, idx){ loadSetKPI(idx); });
 					}
+					function kpiOtherHtml(idx, text){
+						var on = String(text || '').trim() !== '';
+						return '<div class="form-check mb-1 mt-2">'
+							+ '<input type="checkbox" class="form-check-input pm-cons-kpi-other" id="pm-cons-kpi-other-'+idx+'" data-set-index="'+idx+'"'+(on ? ' checked' : '')+'>'
+							+ '<label class="form-check-label" for="pm-cons-kpi-other-'+idx+'">อื่นๆ</label>'
+							+ '</div>'
+							+ '<input type="text" maxlength="500" class="form-control form-control-sm pm-cons-kpi-other-text'+(on ? '' : ' d-none')+'" name="sets['+idx+'][kpi_other]" data-set-index="'+idx+'" placeholder="ระบุตัวชี้วัดอื่นๆ" value="'+esc(text || '')+'">';
+					}
 					function loadSetKPI(idx){
 						var box = document.querySelector('.pm-cons-kpi-box[data-set-index="'+idx+'"]');
 						if (!box) return;
-						var st = setState[idx] || { code_ap: '', code_side: '', kpis: [] };
+						var st = setState[idx] || { code_ap: '', code_side: '', code_subprocess: '', kpi_other: '', kpis: [] };
+						var otherCbNow = box.querySelector('.pm-cons-kpi-other');
+						var otherTxNow = box.querySelector('.pm-cons-kpi-other-text');
+						if (otherCbNow) {
+							st.kpi_other = (otherCbNow.checked && otherTxNow) ? String(otherTxNow.value || '').trim() : '';
+						}
 						var typeVal = typeId();
 						var kind = childKind();
 						var copy = setCopy(idx === 0);
@@ -23422,13 +23510,14 @@ if ($op === 'add_project') {
 								so: '',
 								ap: apVal,
 								side: sideVal,
+								subprocess: String(st.code_subprocess || ''),
 								year: yearNow || '',
 								selected_ids: JSON.stringify(st.kpis || [])
 							}
 						}).done(function(res){
 							var html = '';
 							if (!res || !res.length) {
-								html = '<div class="alert alert-warning mb-0">ไม่พบตัวชี้วัดตามประเภท/รายการที่เลือก</div>';
+								html = '<div class="alert alert-warning mb-2">ไม่พบตัวชี้วัดตามประเภท/รายการที่เลือก</div>';
 							} else {
 								res.forEach(function(item, kidx){
 									var cid = 'pm-cons-kpi-' + idx + '-' + kidx;
@@ -23438,6 +23527,7 @@ if ($op === 'add_project') {
 										+ '</div>';
 								});
 							}
+							html += kpiOtherHtml(idx, st.kpi_other || '');
 							box.innerHTML = html;
 						}).fail(function(){
 							box.innerHTML = '<div class="alert alert-danger mb-0">โหลดตัวชี้วัดไม่สำเร็จ</div>';
@@ -23446,10 +23536,15 @@ if ($op === 'add_project') {
 					function captureSetKpis(){
 						setState.forEach(function(st, idx){
 							var ids = [];
-							document.querySelectorAll('.pm-cons-kpi-box[data-set-index="'+idx+'"] input[type="checkbox"]:checked').forEach(function(cb){
-								ids.push(String(cb.value || ''));
+							document.querySelectorAll('.pm-cons-kpi-box[data-set-index="'+idx+'"] input[type="checkbox"]:checked:not(.pm-cons-kpi-other)').forEach(function(cb){
+								if (cb.value) ids.push(String(cb.value));
 							});
 							st.kpis = ids;
+							var otherCb = document.querySelector('.pm-cons-kpi-other[data-set-index="'+idx+'"]');
+							var otherTx = document.querySelector('.pm-cons-kpi-other-text[data-set-index="'+idx+'"]');
+							if (otherCb) {
+								st.kpi_other = (otherCb.checked && otherTx) ? String(otherTx.value || '').trim() : '';
+							}
 						});
 					}
 					window.pmConsistencySnapshot = function(){
@@ -23471,12 +23566,24 @@ if ($op === 'add_project') {
 								if (!sel.value || /^-\s*เลือก/.test(name)) name = '';
 							}
 							var kpis = [];
-							document.querySelectorAll('.pm-cons-kpi-box[data-set-index="'+idx+'"] input[type="checkbox"]:checked').forEach(function(cb){
+							document.querySelectorAll('.pm-cons-kpi-box[data-set-index="'+idx+'"] input[type="checkbox"]:checked:not(.pm-cons-kpi-other)').forEach(function(cb){
 								var lab = cb.closest('.form-check');
 								var txt = lab ? String((lab.querySelector('label') || {}).textContent || '').trim() : '';
 								if (txt) kpis.push(txt);
 							});
-							sets.push({ label: copy.level2Label, name: name, kpis: kpis, hasVal: !!(sel && sel.value) });
+							var otherTxSnap = document.querySelector('.pm-cons-kpi-other-text[data-set-index="'+idx+'"]');
+							var otherCbSnap = document.querySelector('.pm-cons-kpi-other[data-set-index="'+idx+'"]');
+							var otherText = (otherCbSnap && otherCbSnap.checked && otherTxSnap) ? String(otherTxSnap.value || '').trim() : '';
+							if (otherText) kpis.push(otherText);
+							var subSel = document.querySelector('.pm-cons-subprocess[data-set-index="'+idx+'"]');
+							var subName = '';
+							if (subSel && subSel.selectedIndex >= 0 && subSel.value) {
+								subName = String(subSel.options[subSel.selectedIndex].text || '').trim();
+								if (/^-\s*เลือก/.test(subName)) subName = '';
+							}
+							var sideKey = (kind === 'so') ? '' : String((sel && sel.value) || '');
+							var needsSub = typeGroup() === 'mission' && kind !== 'so' && sideKey && subprocessBySide && Array.isArray(subprocessBySide[sideKey]) && subprocessBySide[sideKey].length > 0;
+							sets.push({ label: copy.level2Label, name: name, subprocess: subName, needsSubprocess: !!needsSub, hasSubprocess: !!(subSel && subSel.value), kpiOtherMissing: !!(otherCbSnap && otherCbSnap.checked && !otherText), kpis: kpis, hasVal: !!(sel && sel.value) });
 						});
 						return { typeText: typeText, kind: kind, group: typeGroup(), sets: sets };
 					};
@@ -23486,19 +23593,45 @@ if ($op === 'add_project') {
 						if (!snap.sets.length) return 'กรุณาเพิ่มรายการอย่างน้อย 1 ชุด';
 						for (var i = 0; i < snap.sets.length; i++) {
 							if (!snap.sets[i].hasVal) return setCopy(i === 0).need;
+							if (snap.sets[i].needsSubprocess && !snap.sets[i].hasSubprocess) return 'กรุณาเลือกกระบวนการย่อย';
+							if (snap.sets[i].kpiOtherMissing) return 'กรุณาระบุตัวชี้วัดอื่นๆ';
 						}
 						return '';
 					};
 					var typeEl = document.getElementById('selectConsistencyType');
 					if (typeEl) {
 						typeEl.addEventListener('change', function(){
-							setState = [{ code_ap: '', code_side: '', kpis: [] }];
+							setState = [{ code_ap: '', code_side: '', code_subprocess: '', kpi_other: '', kpis: [] }];
 							renderSets();
 						});
 					}
 					var setsWrap = document.getElementById('boxConsistencySets');
 					if (setsWrap) {
 						setsWrap.addEventListener('change', function(e){
+							var otherCb = e.target && e.target.classList && e.target.classList.contains('pm-cons-kpi-other') ? e.target : null;
+							if (otherCb) {
+								var otherIdx = parseInt(otherCb.getAttribute('data-set-index') || '0', 10);
+								var otherTx = document.querySelector('.pm-cons-kpi-other-text[data-set-index="'+otherIdx+'"]');
+								if (!otherTx) return;
+								if (otherCb.checked) {
+									otherTx.classList.remove('d-none');
+									otherTx.focus();
+								} else {
+									otherTx.value = '';
+									otherTx.classList.add('d-none');
+									if (setState[otherIdx]) setState[otherIdx].kpi_other = '';
+								}
+								return;
+							}
+							var subSel = e.target && e.target.classList && e.target.classList.contains('pm-cons-subprocess') ? e.target : null;
+							if (subSel) {
+								var subIdx = parseInt(subSel.getAttribute('data-set-index') || '0', 10);
+								if (!setState[subIdx]) return;
+								setState[subIdx].code_subprocess = String(subSel.value || '');
+								setState[subIdx].kpis = [];
+								loadSetKPI(subIdx);
+								return;
+							}
 							var sel = e.target && e.target.classList && e.target.classList.contains('pm-cons-set-select') ? e.target : null;
 							if (!sel) return;
 							var idx = parseInt(sel.getAttribute('data-set-index') || '0', 10);
@@ -23510,8 +23643,10 @@ if ($op === 'add_project') {
 								setState[idx].code_side = String(sel.value || '');
 								setState[idx].code_ap = '';
 							}
+							setState[idx].code_subprocess = '';
+							setState[idx].kpi_other = '';
 							setState[idx].kpis = [];
-							loadSetKPI(idx);
+							renderSets();
 						});
 						setsWrap.addEventListener('click', function(e){
 							var btn = e.target && e.target.closest ? e.target.closest('[data-remove-set]') : null;
@@ -23530,14 +23665,14 @@ if ($op === 'add_project') {
 						addBtn.addEventListener('click', function(){
 							if (!typeId()) return;
 							captureSetKpis();
-							setState.push({ code_ap: '', code_side: '', kpis: [] });
+							setState.push({ code_ap: '', code_side: '', code_subprocess: '', kpi_other: '', kpis: [] });
 							renderSets();
 						});
 					}
 					function bootSets(){
 						setState = cloneSavedSets();
 						if (!typeId()) setState = [];
-						else if (!setState.length) setState = [{ code_ap: '', code_side: '', kpis: [] }];
+						else if (!setState.length) setState = [{ code_ap: '', code_side: '', code_subprocess: '', kpi_other: '', kpis: [] }];
 						renderSets();
 					}
 					$('#modalConsistencyAdd').on('shown.bs.modal', function(){
@@ -23550,6 +23685,8 @@ if ($op === 'add_project') {
 							return {
 								code_ap: String(st.code_ap || ''),
 								code_side: String(st.code_side || ''),
+								code_subprocess: String(st.code_subprocess || ''),
+								kpi_other: String(st.kpi_other || ''),
 								kpis: Array.isArray(st.kpis) ? st.kpis.slice() : []
 							};
 						});
@@ -23621,11 +23758,14 @@ if ($op === 'add_project') {
 									html += '    <div class="pm-consistency-value">' + $('<div/>').text(typeText || '-').html() + '</div>';
 									html += '  </div>';
 									var joinedLevel2 = [];
+									var joinedSub = [];
 									var joinedKpis = [];
 									var seenKpi = {};
 									(snap.sets || []).forEach(function(st){
 										var nm = String(st.name || '').trim();
 										if (nm) joinedLevel2.push(nm);
+										var sp = String(st.subprocess || '').trim();
+										if (sp) joinedSub.push(sp);
 										(st.kpis || []).forEach(function(n){
 											n = String(n || '').trim();
 											if (!n || seenKpi[n]) return;
@@ -23637,6 +23777,12 @@ if ($op === 'add_project') {
 									html += '    <div class="pm-consistency-label">' + $('<div/>').text((consUi.level2Label || 'ด้าน/แผนปฏิบัติการ (AP)') + ' :').html() + '</div>';
 									html += '    <div class="pm-consistency-value">' + $('<div/>').text(joinedLevel2.length ? joinedLevel2.join(', ') : '-').html() + '</div>';
 									html += '  </div>';
+									if (snap.group === 'mission') {
+										html += '  <div class="pm-consistency-row">';
+										html += '    <div class="pm-consistency-label">กระบวนการย่อย :</div>';
+										html += '    <div class="pm-consistency-value">' + $('<div/>').text(joinedSub.length ? joinedSub.join(', ') : '-').html() + '</div>';
+										html += '  </div>';
+									}
 									html += '  <div class="pm-consistency-row">';
 									html += '    <div class="pm-consistency-label">ตัวชี้วัดเชิงพันธกิจ/ตัวชี้วัดเชิงกลยุทธ์ (KR) :</div>';
 									html += '    <div class="pm-consistency-value">' + $('<div/>').text(joinedKpis.length ? joinedKpis.join(', ') : '-').html() + '</div>';

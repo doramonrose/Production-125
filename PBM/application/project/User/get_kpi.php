@@ -7,6 +7,7 @@ $type       = isset($_POST['type']) ? trim((string)$_POST['type']) : '';
 $so         = isset($_POST['so']) ? trim((string)$_POST['so']) : '';
 $ap         = isset($_POST['ap']) ? trim((string)$_POST['ap']) : '';
 $side       = isset($_POST['side']) ? trim((string)$_POST['side']) : '';
+$subprocess = isset($_POST['subprocess']) ? trim((string)$_POST['subprocess']) : '';
 $year       = isset($_POST['year']) ? trim((string)$_POST['year']) : '';
 $project_id = isset($_POST['project_id']) ? (int)$_POST['project_id'] : 0;
 
@@ -35,7 +36,8 @@ if (isset($_POST['selected_ids']) && is_string($_POST['selected_ids'])) {
 		if ($ap !== '' && (string)($row['code_ap'] ?? '') === $ap) {
 			$match = true;
 		} elseif ($side !== '' && $ap === '' && (string)($row['code_side'] ?? '') === $side) {
-			$match = true;
+			$rowSp = trim((string)($row['code_subprocess'] ?? ''));
+			$match = ($subprocess === '' || $subprocess === '0' || $rowSp === '' || $rowSp === '0' || $rowSp === $subprocess);
 		}
 		if (!$match) {
 			continue;
@@ -58,6 +60,7 @@ $filter = [
     "so"   => $so,
     "ap"   => $ap,
     "side" => $side,
+    "subprocess" => $subprocess,
     "year" => $year,
 ];
 
