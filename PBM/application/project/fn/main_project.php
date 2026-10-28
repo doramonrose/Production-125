@@ -2715,6 +2715,24 @@ function getSetBudgetSelect($db_connection, $id)
 	return $row ? [$row] : [];
 }
 
+/**
+ * แหล่งงบสำหรับหน่วยแผนเลือกให้โครงการระหว่างปี
+ * รวมปีที่ยังไม่เปิดใช้ (เช่น 2570 ที่ status ยังไม่ใช่ 1) แต่ไม่รวมรายการที่ยกเลิก
+ */
+function pm_plan_budget_source_choices($db_connection): array
+{
+	if (function_exists('getPbmBudgetManageList')) {
+		$list = getPbmBudgetManageList($db_connection, false);
+		if (!empty($list)) {
+			return $list;
+		}
+	}
+	if (function_exists('getAddBudgetSelect')) {
+		return getAddBudgetSelect($db_connection);
+	}
+	return [];
+}
+
 function getAddBudgetSelect($db_connection)
 {
 	$manage = getPbmBudgetManageList($db_connection, true);

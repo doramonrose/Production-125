@@ -9140,6 +9140,345 @@ if ($op === 'notify_plan_result_ajax') {
 	}
 }
 
+// หน่วยแผนกำหนดแหล่งงบโครงการยื่นระหว่างปี (ข้ามขั้นบรรจุแผน จึงยังไม่เคยเลือกแหล่งงบ)
+if ($op === 'plan_admin_set_budget_source_ajax') {
+	header('Content-Type: application/json; charset=utf-8');
+	try {
+		if (ob_get_level() === 0) {
+			@ob_start();
+		}
+		@ob_clean();
+		if (!(defined('PLAN_ADMIN') && PLAN_ADMIN)) {
+			echo json_encode(['ok' => 0, 'msg' => 'ไม่มีสิทธิ์ใช้งานเมนูนี้'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		$project_id = isset($_POST['project_id']) ? (int)$_POST['project_id'] : 0;
+		$budget_code = trim((string)($_POST['budget_code'] ?? ''));
+		$budget_other = trim((string)($_POST['budget_other'] ?? ''));
+		if ($project_id <= 0 || $budget_code === '') {
+			echo json_encode(['ok' => 0, 'msg' => 'กรุณาเลือกแหล่งงบประมาณ'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		if (function_exists('pm_exit_if_project_plan_closed')) {
+			pm_exit_if_project_plan_closed($db_Project, $project_id);
+		}
+		$sess_email = $_SESSION['r_email'] ?? '';
+		$sess_code = $_SESSION['code'] ?? '';
+		$sid = 0;
+		if ($sess_email !== '' && $sess_code !== '') {
+			$st = mysqli_prepare($db_person, 'SELECT id FROM staff WHERE email = ? AND code = ? LIMIT 1');
+			if ($st) {
+				mysqli_stmt_bind_param($st, 'ss', $sess_email, $sess_code);
+				mysqli_stmt_execute($st);
+				$rs = mysqli_stmt_get_result($st);
+				$rw = $rs ? mysqli_fetch_assoc($rs) : null;
+				$sid = (int)($rw['id'] ?? 0);
+			}
+		}
+		$q = @mysqli_query(
+			$db_Project,
+			"SELECT id, midyear_request, status_project, IFNULL(notify_result,'') AS notify_result
+			 FROM pre_project WHERE id='" . (int)$project_id . "' AND status='1' LIMIT 1"
+		);
+		$row = $q ? mysqli_fetch_assoc($q) : null;
+		if (!$row || (int)($row['midyear_request'] ?? 0) !== 1) {
+			echo json_encode(['ok' => 0, 'msg' => 'แก้ไขแหล่งงบแบบนี้ใช้กับโครงการยื่นระหว่างปี'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		$stNow = (string)($row['status_project'] ?? '');
+		if (!in_array($stNow, ['1', '8'], true)) {
+			echo json_encode(['ok' => 0, 'msg' => 'สถานะโครงการนี้ไม่อนุญาตให้แก้ไขแหล่งงบ'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		$nrNow = trim((string)($row['notify_result'] ?? ''));
+		if ($nrNow !== '' && preg_match('/ไม่ผ่าน/u', $nrNow)) {
+			echo json_encode(['ok' => 0, 'msg' => 'โครงการที่ไม่ผ่านการพิจารณา แก้ไขแหล่งงบไม่ได้'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		$known = false;
+		$knownName = '';
+		if ($budget_code === '99') {
+			$known = true;
+			if ($budget_other === '') {
+				echo json_encode(['ok' => 0, 'msg' => 'กรุณาระบุแหล่งงบประมาณอื่น ๆ'], JSON_UNESCAPED_UNICODE);
+				exit;
+			}
+		} elseif (function_exists('pm_plan_budget_source_choices')) {
+			foreach (pm_plan_budget_source_choices($db_Project) as $__bopt) {
+				if (!is_array($__bopt)) {
+					continue;
+				}
+				$__id = trim((string)($__bopt['id'] ?? ''));
+				$__code = trim((string)($__bopt['code'] ?? ''));
+				$__mid = trim((string)($__bopt['budget_manage_id'] ?? ''));
+				if ($budget_code === $__id || ($__code !== '' && $budget_code === $__code) || ($__mid !== '' && $budget_code === $__mid)) {
+					$known = true;
+					$knownName = trim((string)($__bopt['name'] ?? ''));
+					if ($__code !== '') {
+						$budget_code = $__code;
+					}
+					break;
+				}
+			}
+		}
+		if (!$known) {
+			echo json_encode(['ok' => 0, 'msg' => 'ไม่พบแหล่งงบประมาณที่เลือก'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		if ($budget_code !== '99') {
+			$budget_other = $knownName;
+		}
+		$escCode = mysqli_real_escape_string($db_Project, $budget_code);
+		$escOther = mysqli_real_escape_string($db_Project, $budget_other);
+		@mysqli_begin_transaction($db_Project);
+		$preSets = [];
+		$qCols = @mysqli_query($db_Project, "SHOW COLUMNS FROM pre_project");
+		$preCols = [];
+		if ($qCols) {
+			while ($cr = mysqli_fetch_assoc($qCols)) {
+				$fn = trim((string)($cr['Field'] ?? ''));
+				if ($fn !== '') {
+					$preCols[$fn] = true;
+				}
+			}
+		}
+		if (isset($preCols['code_budget'])) {
+			$preSets[] = "code_budget='" . $escCode . "'";
+		}
+		if (isset($preCols['budget_other'])) {
+			$preSets[] = "budget_other='" . $escOther . "'";
+		}
+		if ($preSets) {
+			$preSets[] = 'dates=NOW()';
+			$okPre = @mysqli_query(
+				$db_Project,
+				"UPDATE pre_project SET " . implode(', ', $preSets) . " WHERE id='" . (int)$project_id . "' LIMIT 1"
+			);
+			if (!$okPre) {
+				@mysqli_rollback($db_Project);
+				echo json_encode(['ok' => 0, 'msg' => (mysqli_error($db_Project) ?: 'บันทึกแหล่งงบไม่สำเร็จ')], JSON_UNESCAPED_UNICODE);
+				exit;
+			}
+		}
+		$okRetire = @mysqli_query(
+			$db_Project,
+			"UPDATE project_budget SET status='99', dates=NOW(), staff_insert='" . (int)$sid . "'
+			 WHERE project_id='" . (int)$project_id . "' AND status!='99'"
+		);
+		if (!$okRetire) {
+			@mysqli_rollback($db_Project);
+			echo json_encode(['ok' => 0, 'msg' => (mysqli_error($db_Project) ?: 'บันทึกแหล่งงบไม่สำเร็จ')], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		$stb = mysqli_prepare(
+			$db_Project,
+			"INSERT INTO project_budget (project_id, code_budget, budget_other, status, dates, staff_insert) VALUES (?, ?, ?, '1', NOW(), ?)"
+		);
+		if (!$stb) {
+			@mysqli_rollback($db_Project);
+			echo json_encode(['ok' => 0, 'msg' => 'เตรียมบันทึกแหล่งงบไม่สำเร็จ'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		mysqli_stmt_bind_param($stb, 'issi', $project_id, $budget_code, $budget_other, $sid);
+		if (!mysqli_stmt_execute($stb)) {
+			@mysqli_rollback($db_Project);
+			echo json_encode(['ok' => 0, 'msg' => (mysqli_stmt_error($stb) ?: 'บันทึกแหล่งงบไม่สำเร็จ')], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		@mysqli_query($db_Project, "CREATE TABLE IF NOT EXISTS project_plan_review_log (
+			id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+			project_id INT UNSIGNED NOT NULL,
+			action_type VARCHAR(32) NOT NULL DEFAULT '',
+			actor_staff_id INT UNSIGNED NULL,
+			note MEDIUMTEXT NULL,
+			meta_json MEDIUMTEXT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (id),
+			KEY idx_pprl_project (project_id, created_at),
+			KEY idx_pprl_actor (actor_staff_id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+		$metaEsc = mysqli_real_escape_string($db_Project, json_encode([
+			'budget_code' => $budget_code,
+			'budget_other' => $budget_other,
+		], JSON_UNESCAPED_UNICODE));
+		@mysqli_query(
+			$db_Project,
+			"INSERT INTO project_plan_review_log (project_id, action_type, actor_staff_id, note, meta_json, created_at)
+			 VALUES ('" . (int)$project_id . "', 'plan_set_budget_source', '" . (int)$sid . "', NULL, '" . $metaEsc . "', NOW())"
+		);
+		@mysqli_commit($db_Project);
+		$label = function_exists('pm_format_budget_source_label')
+			? pm_format_budget_source_label($db_Project, $budget_code, $budget_other)
+			: ($budget_other !== '' ? $budget_other : $budget_code);
+		echo json_encode(['ok' => 1, 'label' => $label], JSON_UNESCAPED_UNICODE);
+		exit;
+	} catch (Throwable $e) {
+		if (isset($db_Project) && $db_Project instanceof mysqli) {
+			@mysqli_rollback($db_Project);
+		}
+		echo json_encode(['ok' => 0, 'msg' => 'เกิดข้อผิดพลาด: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
+		exit;
+	}
+}
+
+if (!function_exists('pm_render_plan_budget_source_editor')) {
+	function pm_render_plan_budget_source_editor(int $projectId, string $code, string $other, array $opts, string $projectYear = ''): void
+	{
+		$optsJson = json_encode(array_values($opts), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+		if ($optsJson === false) {
+			$optsJson = '[]';
+		}
+		?>
+		<div class="pm-plan-budget-edit mt-2 mb-2" id="pmPlanBudgetEdit">
+			<button type="button" class="btn btn-sm btn-outline-primary font-weight-bold" id="btnPmPaBudgetEdit">
+				<i class="fa fa-edit mr-1"></i>แก้ไขแหล่งงบประมาณ
+			</button>
+			<div id="pmPaBudgetEditBox" class="d-none mt-2 p-2" style="background:#fff;border:1px solid #c4b5fd;border-radius:10px;max-width:640px;">
+				<div class="font-weight-bold mb-1">แหล่งงบประมาณ</div>
+				<label class="small font-weight-bold mb-1" for="pmPaBudgetYear">ปีงบประมาณ</label>
+				<select id="pmPaBudgetYear" class="form-control form-control-sm mb-2"></select>
+				<input type="search" id="pmPaBudgetSearch" class="form-control form-control-sm mb-2" placeholder="ค้นหารหัสงบ / ชื่อแหล่ง">
+				<select id="pmPaBudgetCode" class="form-control form-control-sm" size="6"></select>
+				<input type="text" id="pmPaBudgetOther" class="form-control form-control-sm mt-2 d-none" placeholder="ระบุแหล่งงบประมาณอื่น ๆ" value="<?= htmlspecialchars($other, ENT_QUOTES, 'UTF-8') ?>">
+				<div class="mt-2">
+					<button type="button" class="btn btn-sm btn-success font-weight-bold" id="btnPmPaBudgetSave">บันทึกแหล่งงบประมาณ</button>
+					<button type="button" class="btn btn-sm btn-outline-secondary" id="btnPmPaBudgetCancel">ยกเลิก</button>
+				</div>
+			</div>
+		</div>
+		<script>
+		(function($){
+			if (window.pmPlanBudgetEditBound) return;
+			window.pmPlanBudgetEditBound = true;
+			var projectId = <?= (int)$projectId ?>;
+			var currentCode = <?= json_encode($code, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+			var projectYear = <?= json_encode($projectYear, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+			var opts = <?= $optsJson ?>;
+			if (!Array.isArray(opts)) opts = [];
+			function yearKey(y){
+				var d = String(y || '').replace(/\D+/g, '');
+				if (!d) return '';
+				if (d.length <= 2) d = String(2500 + parseInt(d, 10));
+				return d.length >= 4 ? d.slice(0, 4) : d;
+			}
+			function fillYears(){
+				var years = {};
+				var codeYear = '';
+				for (var i = 0; i < opts.length; i++) {
+					var it = opts[i] || {};
+					if (String(it.id || '') === '99') continue;
+					var y = yearKey(it.year);
+					if (y) years[y] = y;
+					if (currentCode && (String(it.id || '') === String(currentCode) || String(it.code || '') === String(currentCode))) {
+						codeYear = y;
+					}
+				}
+				var list = Object.keys(years).sort(function(a, b){ return Number(b) - Number(a); });
+				var $y = $('#pmPaBudgetYear');
+				var keep = String($y.val() || '');
+				$y.empty();
+				list.forEach(function(y){
+					$y.append($('<option>').val(y).text('พ.ศ. ' + y));
+				});
+				var prefer = codeYear || keep || yearKey(projectYear);
+				if (prefer && years[prefer]) $y.val(prefer);
+				else if (list.length) $y.prop('selectedIndex', 0);
+			}
+			function fillSelect(){
+				var q = String($('#pmPaBudgetSearch').val() || '').toLowerCase().trim();
+				var year = yearKey($('#pmPaBudgetYear').val() || '');
+				var $sel = $('#pmPaBudgetCode');
+				var picked = String($sel.val() || currentCode || '');
+				$sel.empty();
+				var n = 0;
+				for (var i = 0; i < opts.length; i++) {
+					var it = opts[i] || {};
+					var id = String(it.id || '');
+					var name = String(it.name || '');
+					var code = String(it.code || id);
+					if (id !== '99') {
+						var itYear = yearKey(it.year);
+						if (year && itYear && itYear !== year) continue;
+					}
+					var hay = (code + ' ' + name + ' ' + String(it.year || '')).toLowerCase();
+					if (q && hay.indexOf(q) === -1 && id !== '99') continue;
+					var label = id === '99' ? name : (code + ' — ' + name);
+					$sel.append($('<option>').val(id).text(label).attr('title', label));
+					n++;
+				}
+				if (picked) $sel.val(picked);
+				if (String($sel.val() || '') !== picked) $sel.val('');
+				toggleOther();
+			}
+			function toggleOther(){
+				var isOther = String($('#pmPaBudgetCode').val() || '') === '99';
+				$('#pmPaBudgetOther').toggleClass('d-none', !isOther);
+			}
+			$(document).on('click', '#btnPmPaBudgetEdit', function(){
+				$('#pmPaBudgetEditBox').removeClass('d-none');
+				fillYears();
+				fillSelect();
+			});
+			$(document).on('change', '#pmPaBudgetYear', function(){
+				$('#pmPaBudgetCode').val('');
+				fillSelect();
+			});
+			$(document).on('click', '#btnPmPaBudgetCancel', function(){
+				$('#pmPaBudgetEditBox').addClass('d-none');
+			});
+			$(document).on('input', '#pmPaBudgetSearch', fillSelect);
+			$(document).on('change', '#pmPaBudgetCode', toggleOther);
+			$(document).on('click', '#btnPmPaBudgetSave', function(){
+				var code = String($('#pmPaBudgetCode').val() || '').trim();
+				var other = String($('#pmPaBudgetOther').val() || '').trim();
+				if (!code) {
+					if (typeof Swal !== 'undefined') Swal.fire({icon:'warning', title:'กรุณาเลือกแหล่งงบประมาณ'});
+					else alert('กรุณาเลือกแหล่งงบประมาณ');
+					return;
+				}
+				if (code === '99' && !other) {
+					if (typeof Swal !== 'undefined') Swal.fire({icon:'warning', title:'กรุณาระบุแหล่งงบประมาณอื่น ๆ'});
+					else alert('กรุณาระบุแหล่งงบประมาณอื่น ๆ');
+					return;
+				}
+				var $btn = $(this).prop('disabled', true);
+				$.ajax({
+					url: '?page=project_manage',
+					type: 'POST',
+					dataType: 'text',
+					data: {
+						op: 'plan_admin_set_budget_source_ajax',
+						project_id: projectId,
+						budget_code: code,
+						budget_other: other
+					}
+				}).done(function(raw){
+					var res = null;
+					try { res = JSON.parse(String(raw || '')); } catch (e) { res = null; }
+					if (res && Number(res.ok) === 1) {
+						if (typeof Swal !== 'undefined') {
+							Swal.fire({icon:'success', title:'บันทึกแหล่งงบประมาณแล้ว', timer:900, showConfirmButton:false}).then(function(){ location.reload(); });
+						} else {
+							location.reload();
+						}
+						return;
+					}
+					$btn.prop('disabled', false);
+					var msg = (res && res.msg) ? res.msg : 'บันทึกไม่สำเร็จ';
+					if (typeof Swal !== 'undefined') Swal.fire({icon:'error', title: msg});
+					else alert(msg);
+				}).fail(function(){
+					$btn.prop('disabled', false);
+					if (typeof Swal !== 'undefined') Swal.fire({icon:'error', title:'บันทึกไม่สำเร็จ'});
+					else alert('บันทึกไม่สำเร็จ');
+				});
+			});
+		})(window.jQuery);
+		</script>
+		<?php
+	}
+}
+
 // Plan Admin: แก้ไขผู้ตรวจสอบ/ผู้พิจารณาในคำขอ "ขอบรรจุโครงการ" (ทุกลำดับ)
 if ($op === 'plan_admin_edit_include_cert_row_ajax') {
 	header('Content-Type: application/json; charset=utf-8');
@@ -13540,6 +13879,29 @@ if ($op === 'add_project') {
 			background:#5b21b6;
 			border-color:#5b21b6;
 			color:#fff;
+		}
+		#modalConsistencyAdd .form-check{
+			display:flex;
+			align-items:flex-start;
+			gap:.55rem;
+			padding-left:0;
+			margin-bottom:.4rem;
+			min-height:0;
+		}
+		#modalConsistencyAdd .form-check .form-check-input{
+			float:none;
+			position:static;
+			flex:0 0 auto;
+			width:1.05rem;
+			height:1.05rem;
+			margin:.28rem 0 0;
+		}
+		#modalConsistencyAdd .form-check-label{
+			display:block;
+			flex:1 1 auto;
+			margin:0;
+			line-height:1.45;
+			padding-top:.05rem;
 		}
 		#modalGeneralInfo .pm-cons-hint{
 			margin: .2rem 0 0;
@@ -18160,6 +18522,61 @@ if ($op === 'add_project') {
 					$pm_pa_memo_name = trim((string)($saved_pre['name_project'] ?? ''));
 					$pm_pa_memo_budget_fmt = '0';
 					$pm_pa_memo_budget_src = '-';
+					$pm_plan_budget_code = trim((string)($saved_pre['code_budget'] ?? ''));
+					$pm_plan_budget_other = trim((string)($saved_pre['budget_other'] ?? ''));
+					$__savedBudgetRow = [];
+					if (!empty($saved_budgets) && is_array($saved_budgets)) {
+						$__lastBudget = $saved_budgets[count($saved_budgets) - 1];
+						if (is_array($__lastBudget)) {
+							$__savedBudgetRow = $__lastBudget;
+						}
+					}
+					if (($pm_plan_budget_code === '' || $pm_plan_budget_code === '0') && $__savedBudgetRow) {
+						$pm_plan_budget_code = trim((string)($__savedBudgetRow['code_budget'] ?? ''));
+						if ($pm_plan_budget_other === '') {
+							$pm_plan_budget_other = trim((string)($__savedBudgetRow['budget_other'] ?? ''));
+						}
+					}
+					if (function_exists('pm_format_budget_source_label')) {
+						$__srcLbl = trim((string)pm_format_budget_source_label($db_Project, $pm_plan_budget_code, $pm_plan_budget_other));
+						if ($__srcLbl !== '') {
+							$pm_pa_memo_budget_src = $__srcLbl;
+						}
+					} elseif ($pm_plan_budget_other !== '') {
+						$pm_pa_memo_budget_src = $pm_plan_budget_other;
+					} elseif ($pm_plan_budget_code !== '') {
+						$pm_pa_memo_budget_src = $pm_plan_budget_code;
+					}
+					$pm_plan_can_edit_budget_src = (defined('PLAN_ADMIN') && PLAN_ADMIN)
+						&& !empty($pm_is_midyear)
+						&& $edit_project_id > 0
+						&& in_array((string)($saved_pre['status_project'] ?? ''), ['1', '8'], true)
+						&& !($pm_notify_result_txt !== '' && preg_match('/ไม่ผ่าน/u', $pm_notify_result_txt));
+					$pm_plan_budget_opts = [];
+					if ($pm_plan_can_edit_budget_src && function_exists('pm_plan_budget_source_choices')) {
+						foreach (pm_plan_budget_source_choices($db_Project) as $__bopt) {
+							if (!is_array($__bopt)) {
+								continue;
+							}
+							$__id = trim((string)($__bopt['id'] ?? ($__bopt['code'] ?? '')));
+							if ($__id === '' || $__id === '99') {
+								continue;
+							}
+							$__yd = preg_replace('/\D+/', '', trim((string)($__bopt['year'] ?? '')));
+							$__ydRaw = preg_replace('/\D+/', '', trim((string)($__bopt['year_raw'] ?? '')));
+							$__yshow = $__yd !== '' ? $__yd : $__ydRaw;
+							if ($__yshow !== '' && strlen($__yshow) <= 2) {
+								$__yshow = (string)(2500 + (int)$__yshow);
+							}
+							$pm_plan_budget_opts[] = [
+								'id' => $__id,
+								'code' => trim((string)($__bopt['code'] ?? $__id)),
+								'name' => trim((string)($__bopt['name'] ?? '')) !== '' ? trim((string)($__bopt['name'] ?? '')) : $__id,
+								'year' => $__yshow,
+							];
+						}
+						$pm_plan_budget_opts[] = ['id' => '99', 'code' => '99', 'name' => 'อื่น ๆ (ระบุเอง)', 'year' => ''];
+					}
 					if (
 						(defined('PLAN_ADMIN') && PLAN_ADMIN)
 						&& $edit_project_id > 0
@@ -18179,21 +18596,6 @@ if ($op === 'add_project') {
 						$__srp = $__sump ? mysqli_fetch_assoc($__sump) : null;
 						$__totp = (float)($__srp['t'] ?? 0);
 						$pm_pa_memo_budget_fmt = number_format($__totp, 0, '.', ',');
-						$__cbp = (string)($saved_pre['code_budget'] ?? '');
-						$__bop = trim((string)($saved_pre['budget_other'] ?? ''));
-						$__blp = [];
-						if (function_exists('getAddBudgetSelect')) {
-							foreach (getAddBudgetSelect($db_Project) as $__pb) {
-								$__blp[(string)($__pb['id'] ?? '')] = trim((string)($__pb['name'] ?? ''));
-							}
-						}
-						if ($__cbp === '99' && $__bop !== '') {
-							$pm_pa_memo_budget_src = $__bop;
-						} elseif ($__cbp !== '' && isset($__blp[$__cbp]) && $__blp[$__cbp] !== '') {
-							$pm_pa_memo_budget_src = $__blp[$__cbp];
-						} elseif ($__cbp !== '') {
-							$pm_pa_memo_budget_src = 'แหล่งงบรหัส ' . $__cbp;
-						}
 					}
 					$pm_approver_rows = [];
 					$pm_all_approvers_approved = false;
@@ -19035,7 +19437,7 @@ if ($op === 'add_project') {
 									$__badgeTxt = 'รอลำดับก่อนหน้า';
 									$__badgeCls = 'pm-notify-result-badge warn';
 									if ($__st === 'approved') {
-										$__badgeTxt = 'อนุมัติแล้ว';
+										$__badgeTxt = 'ผ่าน';
 										$__badgeCls = 'pm-notify-result-badge ok';
 									} elseif ($__st === 'rejected') {
 										$__badgeTxt = 'ตีกลับเพื่อแก้ไข';
@@ -19533,6 +19935,10 @@ if ($op === 'add_project') {
 							รอการอนุมัติโครงการตาม Flow (<?= (int)$pm_approve_ok_count ?>/<?= (int)$pm_approve_count ?> ลำดับ)
 						</div>
 					<?php endif; ?>
+					<?php if (!empty($pm_plan_can_edit_budget_src) && empty($pm_show_plan_admin_operate_chain) && function_exists('pm_render_plan_budget_source_editor')): ?>
+						<div class="small text-muted mt-2">แหล่งงบ: <strong class="text-dark"><?= htmlspecialchars(($pm_pa_memo_budget_src !== '' && $pm_pa_memo_budget_src !== '-') ? $pm_pa_memo_budget_src : 'ยังไม่ได้เลือก', ENT_QUOTES, 'UTF-8') ?></strong></div>
+						<?php pm_render_plan_budget_source_editor((int)$edit_project_id, (string)($pm_plan_budget_code ?? ''), (string)($pm_plan_budget_other ?? ''), is_array($pm_plan_budget_opts ?? null) ? $pm_plan_budget_opts : [], (string)($years_select ?? '')); ?>
+					<?php endif; ?>
 					<?php if (!empty($pm_approver_rows) && empty($pm_is_legacy_operate_approver)): ?>
 						<div class="pm-review-timeline mt-2">
 							<div class="pm-review-timeline-title">ลำดับผู้อนุมัติ</div>
@@ -19542,7 +19948,7 @@ if ($op === 'add_project') {
 									$__badgeTxt = 'รอลำดับก่อนหน้า';
 									$__badgeCls = 'pm-notify-result-badge warn';
 									if ($__st === 'approved') {
-										$__badgeTxt = 'อนุมัติแล้ว';
+										$__badgeTxt = 'อนุมัติ';
 										$__badgeCls = 'pm-notify-result-badge ok';
 									} elseif ($__st === 'rejected') {
 										$__badgeTxt = 'ตีกลับเพื่อแก้ไข';
@@ -19744,8 +20150,11 @@ if ($op === 'add_project') {
 						<span class="mx-1">·</span>
 						<span>งบ <?= htmlspecialchars($pm_pa_memo_budget_fmt, ENT_QUOTES, 'UTF-8') ?> บาท</span>
 						<span class="mx-1">·</span>
-						<span><?= htmlspecialchars($pm_pa_memo_budget_src, ENT_QUOTES, 'UTF-8') ?></span>
+						<span>แหล่งงบ: <strong class="text-dark"><?= htmlspecialchars(($pm_pa_memo_budget_src !== '' && $pm_pa_memo_budget_src !== '-') ? $pm_pa_memo_budget_src : 'ยังไม่ได้เลือก', ENT_QUOTES, 'UTF-8') ?></strong></span>
 					</div>
+					<?php if (!empty($pm_plan_can_edit_budget_src) && function_exists('pm_render_plan_budget_source_editor')): ?>
+						<?php pm_render_plan_budget_source_editor((int)$edit_project_id, (string)($pm_plan_budget_code ?? ''), (string)($pm_plan_budget_other ?? ''), is_array($pm_plan_budget_opts ?? null) ? $pm_plan_budget_opts : [], (string)($years_select ?? '')); ?>
+					<?php endif; ?>
 					<div class="pm-pa-approval-panel">
 						<div class="pm-pa-approval-head d-flex flex-wrap justify-content-between align-items-center">
 							<div class="pm-pa-approval-title font-weight-bold mb-0">
@@ -23021,10 +23430,11 @@ if ($op === 'add_project') {
 							if (!res || !res.length) {
 								html = '<div class="alert alert-warning mb-0">ไม่พบตัวชี้วัดตามประเภท/รายการที่เลือก</div>';
 							} else {
-								res.forEach(function(item){
+								res.forEach(function(item, kidx){
+									var cid = 'pm-cons-kpi-' + idx + '-' + kidx;
 									html += '<div class="form-check mb-1">'
-										+ '<input type="checkbox" name="sets['+idx+'][kpi_list][]" value="'+esc(item.kpi_id)+'" class="form-check-input" '+(item.checked?'checked':'')+'>'
-										+ '<label class="form-check-label">'+esc(item.kpi_name||'')+'</label>'
+										+ '<input type="checkbox" id="'+cid+'" name="sets['+idx+'][kpi_list][]" value="'+esc(item.kpi_id)+'" class="form-check-input" '+(item.checked?'checked':'')+'>'
+										+ '<label class="form-check-label" for="'+cid+'">'+esc(item.kpi_name||'')+'</label>'
 										+ '</div>';
 								});
 							}

@@ -1051,6 +1051,19 @@ if ($pm_appr_route_op === 'get_operate_project_detail') {
 	$budget_source = function_exists('resolveProjectBudgetSourceForDisplay')
 		? resolveProjectBudgetSourceForDisplay($db_Project, $project_id)
 		: '-';
+	$budget_code_now = '';
+	$budget_other_now = '';
+	$qPbNow = @mysqli_query(
+		$db_Project,
+		"SELECT code_budget, budget_other FROM project_budget
+		 WHERE project_id='" . (int)$project_id . "' AND status!='99'
+		 ORDER BY id DESC LIMIT 1"
+	);
+	$rPbNow = $qPbNow ? mysqli_fetch_assoc($qPbNow) : null;
+	if ($rPbNow) {
+		$budget_code_now = trim((string)($rPbNow['code_budget'] ?? ''));
+		$budget_other_now = trim((string)($rPbNow['budget_other'] ?? ''));
+	}
 	$operate_submitter_reply_note = trim((string)($proj['operate_submitter_reply_note'] ?? ''));
 	$operate_submitter_reply_updated_at = trim((string)($proj['operate_submitter_reply_updated_at'] ?? ''));
 
@@ -1384,6 +1397,16 @@ if ($pm_appr_route_op === 'get_operate_project_detail') {
 					$can_act_modal = true;
 				}
 			}
+			// สายผู้อนุมัติใช้เลขลำดับชุดใหม่ อย่าดึง log ของสายตรวจสอบรอบก่อนที่เลขลำดับตรงกันมาแสดง
+			if ($plan_rc_at_txt_ap !== '') {
+				$operate_action_logs = array_values(array_filter(
+					$operate_action_logs,
+					static function ($lg) use ($plan_rc_at_txt_ap) {
+						$at = trim((string)($lg['created_at'] ?? ''));
+						return $at !== '' && strcmp($at, $plan_rc_at_txt_ap) >= 0;
+					}
+				));
+			}
 		}
 	}
 	$notify_ok_pa_rechain = function_exists('pm_notify_allows_plan_admin_operate_rechain')
@@ -1506,6 +1529,36 @@ if ($pm_appr_route_op === 'get_operate_project_detail') {
 	} elseif ($projStatusNow === '9') {
 		$request_status_operate = 'rejected_final';
 	}
+	$pm_operate_notify_txt = trim((string)($proj['notify_result'] ?? ''));
+	$pm_operate_can_edit_budget = !empty($pm_appr_is_plan_admin)
+		&& ((int)($proj['midyear_request'] ?? 0) === 1)
+		&& in_array($projStatusNow, ['1', '8'], true)
+		&& !($pm_operate_notify_txt !== '' && preg_match('/ไม่ผ่าน/u', $pm_operate_notify_txt));
+	$pm_operate_budget_opts = [];
+	if ($pm_operate_can_edit_budget && function_exists('pm_plan_budget_source_choices')) {
+		foreach (pm_plan_budget_source_choices($db_Project) as $__bopt) {
+			if (!is_array($__bopt)) {
+				continue;
+			}
+			$__id = trim((string)($__bopt['id'] ?? ($__bopt['code'] ?? '')));
+			if ($__id === '' || $__id === '99') {
+				continue;
+			}
+			$__yd = preg_replace('/\D+/', '', trim((string)($__bopt['year'] ?? '')));
+			$__ydRaw = preg_replace('/\D+/', '', trim((string)($__bopt['year_raw'] ?? '')));
+			$__yshow = $__yd !== '' ? $__yd : $__ydRaw;
+			if ($__yshow !== '' && strlen($__yshow) <= 2) {
+				$__yshow = (string)(2500 + (int)$__yshow);
+			}
+			$pm_operate_budget_opts[] = [
+				'id' => $__id,
+				'code' => trim((string)($__bopt['code'] ?? $__id)),
+				'name' => trim((string)($__bopt['name'] ?? '')) !== '' ? trim((string)($__bopt['name'] ?? '')) : $__id,
+				'year' => $__yshow,
+			];
+		}
+		$pm_operate_budget_opts[] = ['id' => '99', 'code' => '99', 'name' => 'อื่น ๆ (ระบุเอง)', 'year' => ''];
+	}
 	echo json_encode([
 		'ok' => 1,
 		'flow_type' => 'operate',
@@ -1531,8 +1584,13 @@ if ($pm_appr_route_op === 'get_operate_project_detail') {
 		'operate_detail' => [
 			'project_code' => (string)($proj['code_pre_project'] ?? ''),
 			'project_name' => (string)($proj['name_project'] ?? ''),
+			'project_id' => (int)$project_id,
 			'budget_baht' => $budget_baht,
 			'budget_source' => $budget_source,
+			'budget_code' => $budget_code_now,
+			'budget_other' => $budget_other_now,
+			'can_edit_budget' => !empty($pm_operate_can_edit_budget) ? 1 : 0,
+			'budget_options' => $pm_operate_budget_opts,
 			'is_midyear' => ((int)($proj['midyear_request'] ?? 0) === 1) ? 1 : 0,
 			'midyear_reason' => trim((string)($proj['midyear_reason'] ?? '')),
 		],
@@ -4706,6 +4764,59 @@ if ((int)$sid > 0) {
 			$__status_icon = 'fa-hourglass-half';
 			$__status_group = 'pending';
 		}
+		$__myNeedsAction = !empty($__isPlanPickInbox);
+		$__myHasDecision = false;
+		if (function_exists('pm_appr_json_chain_user_turn') && function_exists('pm_appr_dec_map_by_so')) {
+			if (pm_appr_json_chain_user_turn($__certRaw, $__decOpBySo, (int)$sid)) {
+				$__myNeedsAction = true;
+			}
+			if (!$__myNeedsAction && $__replyNoteInbox !== '' && $__st === '8' && function_exists('pm_appr_json_chain_user_recheck_after_reply')
+				&& pm_appr_json_chain_user_recheck_after_reply($__certRaw, $__decOpBySo, (int)$sid)) {
+				$__myNeedsAction = true;
+			}
+			$__apprDecInbox = [];
+			if ($__apprRawInbox !== '') {
+				$__apprDecInbox = pm_appr_dec_map_by_so(
+					$db_Project,
+					"SELECT sort_order, decision FROM project_operate_approver_decision WHERE project_id='" . (int)$__pid . "'"
+				);
+				if (pm_appr_json_chain_user_turn($__apprRawInbox, $__apprDecInbox, (int)$sid)) {
+					$__myNeedsAction = true;
+				}
+				if (!$__myNeedsAction && $__replyNoteInbox !== '' && $__st === '8' && function_exists('pm_appr_json_chain_user_recheck_after_reply')
+					&& pm_appr_json_chain_user_recheck_after_reply($__apprRawInbox, $__apprDecInbox, (int)$sid)) {
+					$__myNeedsAction = true;
+				}
+			}
+			$__chainDecided = static function ($json, array $decMap, int $who): bool {
+				$arr = json_decode((string)$json, true);
+				if (!is_array($arr)) {
+					return false;
+				}
+				$n = 0;
+				foreach ($arr as $c) {
+					if (!is_array($c)) {
+						continue;
+					}
+					$n++;
+					$so = (int)($c['sort_order'] ?? 0);
+					if ($so <= 0) {
+						$so = $n;
+					}
+					if ((int)($c['staff_id'] ?? 0) !== $who) {
+						continue;
+					}
+					$dec = strtolower(trim((string)($decMap[$so] ?? '')));
+					if ($dec === 'approved' || $dec === 'rejected') {
+						return true;
+					}
+				}
+				return false;
+			};
+			$__myHasDecision = $__chainDecided($__certRaw, $__decOpBySo, (int)$sid)
+				|| ($__apprRawInbox !== '' && $__chainDecided($__apprRawInbox, $__apprDecInbox, (int)$sid));
+		}
+		$__myActed = (!$__myNeedsAction && $__myHasDecision) ? 1 : 0;
 		$__nm = trim((string)($__pr['name_project'] ?? ''));
 		$__subject = 'ขอดำเนินการโครงการ ' . ($__nm !== '' ? $__nm : '…');
 		if ($__unit_name !== '' && $__unit_name !== '-') {
@@ -4730,6 +4841,7 @@ if ((int)$sid > 0) {
 			'is_midyear' => !empty($__isMidyear),
 			'is_submitter' => !empty($__isOperateSubmitter) ? 1 : 0,
 			'is_reviewer' => (!empty($__isOperateReviewer) || !empty($__isOperateApprover) || !empty($__isPlanPickInbox) || !empty($__isPlanFollowInbox)) ? 1 : 0,
+			'my_acted' => $__myActed,
 			'is_resubmitted' => ($__replyNoteInbox !== '' && $__status_group === 'pending') ? 1 : 0,
 		];
 	}
@@ -6101,6 +6213,12 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		color: #4a3263;
 		background: #ffffff;
 	}
+	#modalRequestDetail .md-summary-table .md-rich p{
+		margin: 0 0 .35rem;
+	}
+	#modalRequestDetail .md-summary-table .md-rich p:last-child{
+		margin-bottom: 0;
+	}
 	#modalRequestDetail .md-sum-proj-list li,
 	#modalRequestDetail .md-sum-ind-list li{
 		margin: .15rem 0;
@@ -7343,6 +7461,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 								data-flow="operate"
 								data-is-submitter="<?php echo $row_is_sub; ?>"
 								data-is-reviewer="<?php echo $row_is_rev; ?>"
+								data-my-acted="<?php echo !empty($pr['my_acted']) ? '1' : '0'; ?>"
 								data-inbox-ref="<?php echo htmlspecialchars($inbox_ref, ENT_QUOTES, 'UTF-8'); ?>"
 								data-unread="<?php echo $row_unread; ?>"
 								data-search="<?php echo htmlspecialchars($__search, ENT_QUOTES, 'UTF-8'); ?>"
@@ -7396,10 +7515,6 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 											title="จัดการ">
 											<i class="fa fa-cog mr-1"></i> จัดการ
 										</button>
-										<a href="?page=project_manage&op=add_project&project_id=<?php echo (int)($pr['id'] ?? 0); ?>&years_select=<?php echo rawurlencode((string)$years_select); ?>&back_to=<?php echo rawurlencode('?page=project_approve&years_select=' . rawurlencode((string)$years_select)); ?>"
-											class="btn btn-info btn-sm font-weight-bold" style="border-radius:.55rem;" title="รายละเอียด">
-											<i class="fa fa-file-alt mr-1"></i> รายละเอียด
-										</a>
 									</div>
 								</td>
 							</tr>
@@ -7486,10 +7601,6 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 											title="จัดการ">
 											<i class="fa fa-cog mr-1"></i> จัดการ
 										</button>
-										<a href="?page=project_manage&op=add_project&project_id=<?php echo (int)($pr['id'] ?? 0); ?>&years_select=<?php echo rawurlencode((string)$years_select); ?>&back_to=<?php echo rawurlencode('?page=project_approve&years_select=' . rawurlencode((string)$years_select)); ?>"
-											class="btn btn-info btn-sm font-weight-bold" style="border-radius:.55rem;" title="รายละเอียด">
-											<i class="fa fa-file-alt mr-1"></i> รายละเอียด
-										</a>
 									</div>
 								</td>
 							</tr>
@@ -7578,10 +7689,6 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 											title="พิจารณาการยกเลิก">
 											<i class="fa fa-cog mr-1"></i> จัดการ
 										</button>
-										<a href="?page=project_manage&op=add_project&project_id=<?php echo (int)($pr['id'] ?? 0); ?>&years_select=<?php echo rawurlencode((string)$years_select); ?>&back_to=<?php echo rawurlencode('?page=project_approve&years_select=' . rawurlencode((string)$years_select)); ?>"
-											class="btn btn-info btn-sm font-weight-bold" style="border-radius:.55rem;" title="รายละเอียด">
-											<i class="fa fa-file-alt mr-1"></i> รายละเอียด
-										</a>
 									</div>
 								</td>
 							</tr>
@@ -7658,10 +7765,6 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 											title="จัดการ">
 											<i class="fa fa-cog mr-1"></i> จัดการ
 										</button>
-										<a href="?page=project_manage&op=add_project&project_id=<?php echo (int)($pr['id'] ?? 0); ?>&years_select=<?php echo rawurlencode((string)$years_select); ?>&back_to=<?php echo rawurlencode('?page=project_approve&years_select=' . rawurlencode((string)$years_select)); ?>"
-											class="btn btn-info btn-sm font-weight-bold" style="border-radius:.55rem;" title="รายละเอียด">
-											<i class="fa fa-file-alt mr-1"></i> รายละเอียด
-										</a>
 									</div>
 								</td>
 							</tr>
@@ -7732,7 +7835,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 								<td class="text-center">
 									<div class="pm-action-wrap">
 										<a href="?page=project_manage&op=add_project&project_id=<?php echo (int)($pr['id'] ?? 0); ?>&years_select=<?php echo rawurlencode((string)$years_select); ?>&back_to=<?php echo rawurlencode($__back); ?>"
-											class="btn btn-success btn-sm font-weight-bold" style="border-radius:.55rem;" title="เปิดดูโครงการและพิจารณาการแก้ไข">
+											class="btn btn-success btn-sm font-weight-bold" style="border-radius:.55rem;" target="_blank" rel="noopener" title="เปิดดูโครงการและพิจารณาการแก้ไข">
 											<i class="fa fa-eye mr-1"></i> ดูโครงการ
 										</a>
 									</div>
@@ -7804,6 +7907,9 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 				</section>
 			</div>
 			<div class="modal-footer pm-plan-can-footer">
+				<a class="btn btn-info btn-sm font-weight-bold mr-auto" id="pmPlanCanDetailBtn" target="_blank" rel="noopener" href="#" style="display:none;">
+					<i class="fa fa-file-alt mr-1"></i> รายละเอียดโครงการ
+				</a>
 				<button type="button" class="btn pm-plan-can-btn-close pm-plan-can-close" data-dismiss="modal" data-bs-dismiss="modal">ปิด</button>
 				<button type="button" class="btn pm-plan-can-btn-reject d-none" id="btnPmPlanCanReject"><i class="fa fa-undo mr-1"></i> ตีกลับ</button>
 				<button type="button" class="btn pm-plan-can-btn-approve d-none" id="btnPmPlanCanApprove"><i class="fa fa-check mr-1"></i> อนุมัติยกเลิก</button>
@@ -8040,6 +8146,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 				<button type="button" class="btn btn-outline-primary btn-sm" id="mdCopyApproveLinkBtn" style="display:none;" title="คัดลอกลิงก์ส่งให้ผู้ตรวจสอบเปิดหน้านี้โดยตรง (ต้องล็อกอินด้วยบัญชีผู้ตรวจสอบ)">
 					<i class="fa fa-link mr-1"></i> คัดลอกลิงก์ส่งผู้ตรวจสอบ
 				</button>
+				<div id="mdProjectDetailLinks" class="d-flex flex-wrap align-items-center" style="gap:.35rem;"></div>
 				<button type="button" class="btn btn-secondary ml-auto" id="mdRequestDetailCloseBtn" data-dismiss="modal">ปิด</button>
 			</div>
 		</div>
@@ -8135,10 +8242,11 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		tab = String(tab || currentApprTab || 'pending');
 		var isSub = String($tr.attr('data-is-submitter') || '') === '1';
 		var isRev = String($tr.attr('data-is-reviewer') || '') === '1';
+		var myActed = String($tr.attr('data-my-acted') || '') === '1';
 		var sg = String($tr.attr('data-status-group') || '');
 		if (tab === 'sent') return isSub;
-		if (tab === 'pending') return (isRev && sg === 'pending') || (isSub && sg === 'returned');
-		if (tab === 'done') return sg === 'done' || (isRev && (sg === 'returned' || sg === 'rejected'));
+		if (tab === 'pending') return (isRev && sg === 'pending' && !myActed) || (isSub && sg === 'returned');
+		if (tab === 'done') return sg === 'done' || (isRev && (sg === 'returned' || sg === 'rejected' || myActed));
 		return true;
 	}
 
@@ -8431,6 +8539,28 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		if (!isFinite(n)) return $('<div/>').text(String(v)).html();
 		return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 	}
+	function pmApprRichToHtml(raw){
+		var s = String(raw || '').trim();
+		if (!s) return '-';
+		s = s.replace(/<\s*(script|style|iframe|object|embed|link|meta)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '');
+		s = s.replace(/<\s*(script|style|iframe|object|embed|link|meta)\b[^>]*\/?\s*>/gi, '');
+		var allowed = { P:1, BR:1, DIV:1, SPAN:1, B:1, STRONG:1, I:1, EM:1, U:1, UL:1, OL:1, LI:1 };
+		var $tmp = $('<div/>');
+		$tmp.html(s);
+		var nodes = $tmp.find('*').get().reverse();
+		nodes.forEach(function(el){
+			if (!allowed[el.tagName]) {
+				$(el).replaceWith($(el).contents());
+				return;
+			}
+			while (el.attributes && el.attributes.length) {
+				el.removeAttribute(el.attributes[0].name);
+			}
+		});
+		var out = String($tmp.html() || '').trim();
+		var plain = out.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim();
+		return plain !== '' ? out : '-';
+	}
 	function renderSummaryRows(rows, respFull){
 		var src = respFull || lastDetailResp;
 		var $b = $('#mdSummaryBody');
@@ -8453,13 +8583,38 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 			var budgetFmt = fmtSumBudgetBaht(od.budget_baht);
 			if (!budgetFmt) budgetFmt = '0.00';
 			var bsrc = String(od.budget_source || '-');
+			var bsrcCell = $('<div/>').text(bsrc).html();
+			if (flowType === 'operate' && Number(od.can_edit_budget) === 1) {
+				window.pmApprBudgetEdit = {
+					projectId: parseInt(od.project_id || 0, 10) || 0,
+					code: String(od.budget_code || ''),
+					other: String(od.budget_other || ''),
+					projectYear: String((src && src.request && src.request.budget_year) || ''),
+					opts: Array.isArray(od.budget_options) ? od.budget_options : []
+				};
+				var srcShow = (bsrc && bsrc !== '-') ? bsrc : 'ยังไม่ได้เลือก';
+				bsrcCell = '<div class="d-flex flex-wrap align-items-center" style="gap:.4rem;">'
+					+ '<span id="mdBudgetSrcLabel">' + $('<div/>').text(srcShow).html() + '</span>'
+					+ '<button type="button" class="btn btn-sm btn-outline-primary font-weight-bold" id="mdBtnBudgetEdit"><i class="fa fa-edit mr-1"></i>แก้ไขแหล่งงบประมาณ</button>'
+					+ '</div>'
+					+ '<div id="mdBudgetEditBox" class="d-none mt-2" style="max-width:100%;">'
+					+ '<label class="small font-weight-bold mb-1" for="mdBudgetYear">ปีงบประมาณ</label>'
+					+ '<select id="mdBudgetYear" class="form-control form-control-sm mb-2"></select>'
+					+ '<input type="search" id="mdBudgetSearch" class="form-control form-control-sm mb-2" placeholder="ค้นหารหัสงบ / ชื่อแหล่ง">'
+					+ '<select id="mdBudgetCode" class="form-control form-control-sm" size="6"></select>'
+					+ '<input type="text" id="mdBudgetOther" class="form-control form-control-sm mt-2 d-none" placeholder="ระบุแหล่งงบประมาณอื่น ๆ">'
+					+ '<div class="mt-2">'
+					+ '<button type="button" class="btn btn-sm btn-success font-weight-bold" id="mdBtnBudgetSave">บันทึกแหล่งงบประมาณ</button> '
+					+ '<button type="button" class="btn btn-sm btn-outline-secondary" id="mdBtnBudgetCancel">ยกเลิก</button>'
+					+ '</div></div>';
+			}
 			var html2 = ''
 				+ '<tr><td>รหัสโครงการ</td><td>' + $('<div/>').text(code).html() + '</td></tr>'
 				+ '<tr><td>ชื่อโครงการ</td><td>' + $('<div/>').text(name).html() + '</td></tr>'
 				+ '<tr><td>งบประมาณ (บาท)</td><td>' + $('<div/>').text(budgetFmt).html() + '</td></tr>'
-				+ '<tr><td>แหล่งงบประมาณ</td><td>' + $('<div/>').text(bsrc).html() + '</td></tr>';
+				+ '<tr><td>แหล่งงบประมาณ</td><td>' + bsrcCell + '</td></tr>';
 			if (flowType === 'operate' && Number(od.is_midyear) === 1) {
-				html2 += '<tr><td>เหตุผลการขอระหว่างปี</td><td>' + $('<div/>').text(String(od.midyear_reason || '-')).html().replace(/\n/g,'<br>') + '</td></tr>';
+				html2 += '<tr><td>เหตุผลการขอระหว่างปี</td><td><div class="md-rich">' + pmApprRichToHtml(od.midyear_reason) + '</div></td></tr>';
 			}
 			if (flowType === 'change') {
 				html2 += '<tr><td>เหตุผลการขอเปลี่ยนแปลง</td><td>' + $('<div/>').text(String(od.reason || '-')).html().replace(/\n/g,'<br>') + '</td></tr>';
@@ -8932,6 +9087,143 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		}).always(function(){ $btn.prop('disabled', false); });
 	});
 
+	function pmApprBudgetYearKey(y){
+		var d = String(y || '').replace(/\D+/g, '');
+		if (!d) return '';
+		if (d.length <= 2) d = String(2500 + parseInt(d, 10));
+		return d.length >= 4 ? d.slice(0, 4) : d;
+	}
+	function pmApprFillBudgetYears(){
+		var pack = window.pmApprBudgetEdit || {};
+		var opts = Array.isArray(pack.opts) ? pack.opts : [];
+		var years = {};
+		var codeYear = '';
+		opts.forEach(function(it){
+			it = it || {};
+			if (String(it.id || '') === '99') return;
+			var y = pmApprBudgetYearKey(it.year);
+			if (y) years[y] = y;
+			if (pack.code && (String(it.id || '') === String(pack.code) || String(it.code || '') === String(pack.code))) {
+				codeYear = y;
+			}
+		});
+		var list = Object.keys(years).sort(function(a, b){ return Number(b) - Number(a); });
+		var $y = $('#mdBudgetYear');
+		if (!$y.length) return;
+		var keep = String($y.val() || '');
+		$y.empty();
+		list.forEach(function(y){
+			$y.append($('<option>').val(y).text('พ.ศ. ' + y));
+		});
+		var prefer = codeYear || keep || pmApprBudgetYearKey(pack.projectYear);
+		if (prefer && years[prefer]) $y.val(prefer);
+		else if (list.length) $y.prop('selectedIndex', 0);
+	}
+	function pmApprFillBudgetSelect(){
+		var pack = window.pmApprBudgetEdit || {};
+		var opts = Array.isArray(pack.opts) ? pack.opts : [];
+		var q = String($('#mdBudgetSearch').val() || '').toLowerCase().trim();
+		var year = pmApprBudgetYearKey($('#mdBudgetYear').val() || '');
+		var $sel = $('#mdBudgetCode');
+		if (!$sel.length) return;
+		var picked = String($sel.val() || pack.code || '');
+		$sel.empty();
+		var n = 0;
+		opts.forEach(function(it){
+			it = it || {};
+			var id = String(it.id || '');
+			var name = String(it.name || '');
+			var code = String(it.code || id);
+			if (id !== '99') {
+				var itYear = pmApprBudgetYearKey(it.year);
+				if (year && itYear && itYear !== year) return;
+			}
+			var hay = (code + ' ' + name + ' ' + String(it.year || '')).toLowerCase();
+			if (q && hay.indexOf(q) === -1 && id !== '99') return;
+			var label = id === '99' ? name : (code + ' — ' + name);
+			$sel.append($('<option>').val(id).text(label).attr('title', label));
+			n++;
+		});
+		if (picked) $sel.val(picked);
+		if (String($sel.val() || '') !== picked) $sel.val('');
+		var isOther = String($sel.val() || '') === '99';
+		$('#mdBudgetOther').toggleClass('d-none', !isOther);
+		if (isOther && !$('#mdBudgetOther').val()) {
+			$('#mdBudgetOther').val(String(pack.other || ''));
+		}
+	}
+	$(document).on('click', '#mdBtnBudgetEdit', function(){
+		$('#mdBudgetEditBox').removeClass('d-none');
+		pmApprFillBudgetYears();
+		pmApprFillBudgetSelect();
+	});
+	$(document).on('click', '#mdBtnBudgetCancel', function(){
+		$('#mdBudgetEditBox').addClass('d-none');
+	});
+	$(document).on('change', '#mdBudgetYear', function(){
+		$('#mdBudgetCode').val('');
+		pmApprFillBudgetSelect();
+	});
+	$(document).on('input', '#mdBudgetSearch', pmApprFillBudgetSelect);
+	$(document).on('change', '#mdBudgetCode', function(){
+		$('#mdBudgetOther').toggleClass('d-none', String($(this).val() || '') !== '99');
+	});
+	$(document).on('click', '#mdBtnBudgetSave', function(){
+		var pack = window.pmApprBudgetEdit || {};
+		var projectId = parseInt(pack.projectId || 0, 10) || 0;
+		var code = String($('#mdBudgetCode').val() || '').trim();
+		var other = String($('#mdBudgetOther').val() || '').trim();
+		if (!projectId || !code) {
+			if (typeof Swal !== 'undefined') Swal.fire({icon:'warning', title:'กรุณาเลือกแหล่งงบประมาณ'});
+			else alert('กรุณาเลือกแหล่งงบประมาณ');
+			return;
+		}
+		if (code === '99' && !other) {
+			if (typeof Swal !== 'undefined') Swal.fire({icon:'warning', title:'กรุณาระบุแหล่งงบประมาณอื่น ๆ'});
+			else alert('กรุณาระบุแหล่งงบประมาณอื่น ๆ');
+			return;
+		}
+		var $btn = $(this).prop('disabled', true);
+		$.ajax({
+			url: '?page=project_manage',
+			type: 'POST',
+			dataType: 'text',
+			data: {
+				op: 'plan_admin_set_budget_source_ajax',
+				project_id: projectId,
+				budget_code: code,
+				budget_other: other
+			}
+		}).done(function(raw){
+			var res = null;
+			try { res = JSON.parse(String(raw || '')); } catch (e) { res = null; }
+			if (res && Number(res.ok) === 1) {
+				var label = String(res.label || '').trim();
+				if (!label) label = (code === '99' ? other : code);
+				$('#mdBudgetSrcLabel').text(label);
+				$('#mdBudgetEditBox').addClass('d-none');
+				if (lastDetailResp && lastDetailResp.operate_detail) {
+					lastDetailResp.operate_detail.budget_source = label;
+					lastDetailResp.operate_detail.budget_code = code;
+					lastDetailResp.operate_detail.budget_other = code === '99' ? other : '';
+				}
+				pack.code = code;
+				pack.other = code === '99' ? other : '';
+				$btn.prop('disabled', false);
+				if (typeof Swal !== 'undefined') Swal.fire({icon:'success', title:'บันทึกแหล่งงบประมาณแล้ว', timer:900, showConfirmButton:false});
+				return;
+			}
+			$btn.prop('disabled', false);
+			var msg = (res && res.msg) ? res.msg : 'บันทึกไม่สำเร็จ';
+			if (typeof Swal !== 'undefined') Swal.fire({icon:'error', title: msg});
+			else alert(msg);
+		}).fail(function(){
+			$btn.prop('disabled', false);
+			if (typeof Swal !== 'undefined') Swal.fire({icon:'error', title:'บันทึกไม่สำเร็จ'});
+			else alert('บันทึกไม่สำเร็จ');
+		});
+	});
+
 	function pmApprResolveLinkContext(resp){
 		var flow = String((resp && resp.flow_type) ? resp.flow_type : ($('#mdCertFlowType').val() || 'include'));
 		var yearsSelect = '';
@@ -8973,10 +9265,63 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		}
 	}
 
+	function pmApprProjectDetailUrl(pid){
+		pid = parseInt(pid, 10) || 0;
+		if (pid <= 0) return '';
+		var ys = '';
+		try { ys = String(pmApprYearsSelectPage || '').trim(); } catch (eYs) { ys = ''; }
+		if (!ys) ys = String($('#mdCertYearsSelect').val() || '').trim();
+		var href = '?page=project_manage&op=add_project&project_id=' + encodeURIComponent(String(pid));
+		if (ys) href += '&years_select=' + encodeURIComponent(ys);
+		return href;
+	}
+	function pmApprRefreshModalDetailLinks(resp){
+		var $box = $('#mdProjectDetailLinks');
+		if (!$box.length) return;
+		resp = resp || lastDetailResp || {};
+		var items = [];
+		var seen = {};
+		function addItem(id, name){
+			var n = parseInt(id, 10) || 0;
+			if (n <= 0 || seen[n]) return;
+			seen[n] = 1;
+			items.push({ id: n, name: String(name || '').trim() });
+		}
+		var flow = String($('#mdCertFlowType').val() || '');
+		var certPid = parseInt($('#mdCertProjectId').val() || '0', 10) || 0;
+		if (flow !== 'include' && certPid > 0) addItem(certPid, '');
+		if (Array.isArray(resp.project_ids)) {
+			resp.project_ids.forEach(function(id){ addItem(id, ''); });
+		}
+		if (Array.isArray(resp.summary)) {
+			resp.summary.forEach(function(row){
+				var arr = (row && row.include_project_items) ? row.include_project_items : [];
+				if (!Array.isArray(arr)) return;
+				arr.forEach(function(it){
+					if (!it) return;
+					addItem(it.project_id || it.id, it.name || it.project_name || '');
+				});
+			});
+		}
+		if (!items.length) {
+			$box.empty();
+			return;
+		}
+		var html = '';
+		items.forEach(function(it){
+			var href = pmApprProjectDetailUrl(it.id);
+			if (!href) return;
+			var label = (items.length > 1 && it.name) ? it.name : 'รายละเอียดโครงการ';
+			html += '<a class="btn btn-info btn-sm font-weight-bold" target="_blank" rel="noopener" href="' + href + '" title="' + $('<div/>').text(it.name || label).html() + '">'
+				+ '<i class="fa fa-file-alt mr-1"></i> ' + $('<div/>').text(label).html() + '</a>';
+		});
+		$box.html(html);
+	}
 	function renderSequentialPanel(resp){
 		lastDetailResp = resp || lastDetailResp;
 		try { window.__pmLastDetailResp = lastDetailResp; } catch(_eLd) {}
 		try { rememberIncludeProjectIds(lastDetailResp); } catch(_eRemIds) {}
+		try { pmApprRefreshModalDetailLinks(lastDetailResp); } catch(_eDetLnk) {}
 		try { pmApprRenderReturnedFixUi(resp || lastDetailResp || {}); } catch(_eFixUiR) {}
 		__mdOpStaffEditOpts = [];
 		try {
@@ -9090,7 +9435,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		certs.forEach(function(c){
 			var st = String(c.status || '');
 			var tag = '';
-			if (st === 'approved') tag = '';
+			if (st === 'approved') tag = '<span class="md-seq-pill md-seq-pill-ok"><i class="fa fa-check mr-1"></i>ผ่าน</span>';
 			else if (st === 'rejected') tag = '<span class="md-seq-pill md-seq-pill-no" style="max-width:100%;white-space:normal;text-align:center;line-height:1.25;"><i class="fa fa-undo mr-1"></i>ตีกลับเพื่อแก้ไข</span>';
 			else if (st === 'waiting_turn') tag = '<span class="md-seq-warn">รอตรวจสอบ!</span>';
 			else tag = '<span class="md-seq-muted">รอลำดับก่อนหน้า</span>';
@@ -9158,7 +9503,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 						return;
 					}
 					if (typ === 'certifier_rejected') { label = 'ตีกลับเพื่อแก้ไข'; icon = 'fa-undo'; }
-					else if (typ === 'certifier_approved' || typ === 'certifier_recheck_approved') { label = ''; icon = 'fa-check-circle'; }
+					else if (typ === 'certifier_approved' || typ === 'certifier_recheck_approved') { label = 'ผ่าน'; icon = 'fa-check-circle'; }
 					else if (typ === 'submitter_reply_saved' || typ === 'project_fix_confirmed') { label = 'คำชี้แจง'; icon = 'fa-reply'; }
 					else if (typ === 'submitter_reply_kept') { label = 'คำชี้แจงเดิม (เก็บไว้)'; icon = 'fa-archive'; }
 					else if (typ === 'project_edited') { label = 'บันทึกการแก้ไขโครงการ'; icon = 'fa-edit'; }
@@ -9357,7 +9702,19 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		window.__pmPlanOperateDecide = (flowType === 'operate' && planRechain && (planRechain.show || Number(planRechain.can_decide) === 1));
 		var planReportReview = (flowType === 'report' && resp && resp.plan_report_review) ? resp.plan_report_review : null;
 		window.__pmPlanReportDecide = !!(planReportReview && (planReportReview.show || Number(planReportReview.can_act) === 1));
-		var shouldShowReviewBlock = !allSeqApproved && (can || (flowType === 'operate' && isReviewerInProject));
+		var myReviewerName = '';
+		var myStatus = '';
+		try {
+			(certs || []).forEach(function(c){
+				var so = parseInt(c && c.sort_order ? c.sort_order : '0', 10);
+				if (so === mySort) {
+					myReviewerName = String((c && c.staff_name) ? c.staff_name : '');
+					myStatus = String((c && c.status) ? c.status : '');
+				}
+			});
+		} catch (_eFindMe) {}
+		var alreadyRecorded = (myStatus === 'approved') || (myStatus === 'rejected' && !can);
+		var shouldShowReviewBlock = !allSeqApproved && !alreadyRecorded && (can || (flowType === 'operate' && isReviewerInProject));
 		if (window.__pmPlanOperateDecide) {
 			shouldShowReviewBlock = true;
 			can = true;
@@ -9366,15 +9723,6 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 			shouldShowReviewBlock = true;
 			can = true;
 		}
-		var myReviewerName = '';
-		try {
-			(certs || []).forEach(function(c){
-				var so = parseInt(c && c.sort_order ? c.sort_order : '0', 10);
-				if (so === mySort) {
-					myReviewerName = String((c && c.staff_name) ? c.staff_name : '');
-				}
-			});
-		} catch (_eFindMe) {}
 		var reqId = '';
 		try {
 			if (resp.request && resp.request.id != null) reqId = String(resp.request.id);
@@ -10565,22 +10913,32 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 	function pmApprBuildApproveLink(requestId, opts){
 		opts = opts || {};
 		var rid = parseInt(requestId, 10) || 0;
-		if (!rid) return '';
+		var flow = String(opts.flow || '');
+		var pid = parseInt(opts.projectId, 10) || 0;
+		if (flow === 'operate') {
+			if (pid <= 0 && rid <= 0) return '';
+		} else if (!rid) {
+			return '';
+		}
 		var u;
 		try { u = new URL(window.location.href); } catch (eUrl) { return ''; }
 		u.searchParams.set('page', 'project_approve');
-		u.searchParams.set('open_request_id', String(rid));
+		if (rid > 0) u.searchParams.set('open_request_id', String(rid));
+		else u.searchParams.delete('open_request_id');
 		var ys = String(opts.yearsSelect || pmApprYearsSelectPage || '').trim();
 		if (ys) u.searchParams.set('years_select', ys);
 		var pg = String(opts.projectGroup || currentProjectGroup || '').trim();
 		if (pg) u.searchParams.set('project_group', pg);
-		if (String(opts.flow || '') === 'operate') {
-			var pid = parseInt(opts.projectId, 10) || 0;
+		if (flow === 'operate') {
+			u.searchParams.set('flow', 'operate');
+			u.searchParams.set('open_flow', 'operate');
+			u.searchParams.delete('change_request_id');
+			u.searchParams.delete('request_id');
 			if (pid > 0) {
-				u.searchParams.set('open_flow', 'operate');
 				u.searchParams.set('open_project_id', String(pid));
+				u.searchParams.set('project_id', String(pid));
 			}
-		} else if (String(opts.flow || '') === 'change') {
+		} else if (flow === 'change') {
 			var pidC = parseInt(opts.projectId, 10) || 0;
 			u.searchParams.set('open_flow', 'change');
 			if (pidC > 0) u.searchParams.set('open_project_id', String(pidC));
@@ -10614,7 +10972,8 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		if (flow === 'operate') {
 			rid = parseInt($('#mdOperateRequestId').val() || '0', 10) || 0;
 			pid = parseInt($('#mdCertProjectId').val() || '0', 10) || 0;
-			if (!rid) return $('#mdCopyApproveLinkBtn').hide();
+			if (!pid) pid = parseInt($('#mdRequestId').val() || '0', 10) || 0;
+			if (!rid && !pid) return $('#mdCopyApproveLinkBtn').hide();
 		} else if (flow === 'change') {
 			rid = parseInt($('#mdCertRequestId').val() || '0', 10) || 0;
 			pid = parseInt($('#mdCertProjectId').val() || '0', 10) || 0;
@@ -10622,7 +10981,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		} else {
 			rid = parseInt($('#mdRequestId').val() || '0', 10) || 0;
 		}
-		if (!rid) {
+		if (flow !== 'operate' && !rid) {
 			$('#mdCopyApproveLinkBtn').hide();
 			return;
 		}
@@ -10631,6 +10990,10 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 			projectId: pid,
 			yearsSelect: yearsSelect || pmApprYearsSelectPage
 		});
+		if (!link) {
+			$('#mdCopyApproveLinkBtn').hide();
+			return;
+		}
 		$('#mdCopyApproveLinkBtn').data('approve-link', link).show();
 	}
 	function openIncludeRequestModal(rid){
@@ -10649,6 +11012,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		$('#mdCertFlowType').val('include');
 		$('#mdCertProjectId').val('');
 		$('#mdOperateRequestId').val('');
+		try { pmApprRefreshModalDetailLinks({}); } catch(_eDet0) {}
 		$('#mdSeqHeadText').text('การขอบรรจุโครงการ (ส่งตามลำดับ)');
 		$('#mdSummaryHead').html('<tr><th class="text-center">ความสอดคล้อง</th><th class="text-center" style="width:130px;">จำนวนโครงการ</th><th class="text-center" style="width:140px;">งบประมาณ (บาท)</th><th class="text-center" style="min-width:220px;">โครงการ</th><th class="text-center" style="min-width:260px;">ตัวชี้วัดเป้าหมายโครงการ</th></tr>');
 		submitterReplyEditing = false;
@@ -10783,6 +11147,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		$('#mdCertFlowType').val('operate');
 		$('#mdCertProjectId').val(String(pid));
 		$('#mdOperateRequestId').val(reqId > 0 ? String(reqId) : '');
+		try { pmApprRefreshModalDetailLinks({}); } catch(_eDetOp) {}
 		$('#mdSeqHeadText').text('การขอดำเนินการโครงการ (ส่งตามลำดับ)');
 		$('#mdSummaryHead').html('<tr><th style="width:220px;">รายการ</th><th>รายละเอียด</th></tr>');
 		$('#modalRequestDetail .md-title').html('<i class="fa fa-file-alt mr-1"></i> สรุปการขอดำเนินการโครงการ ประจำปีงบประมาณ พ.ศ. ...');
@@ -10870,6 +11235,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		$('#mdSeqList').empty();
 		$('#mdCertFlowType').val('change');
 		$('#mdCertProjectId').val(pid > 0 ? String(pid) : '');
+		try { pmApprRefreshModalDetailLinks({}); } catch(_eDetCh) {}
 		$('#mdCertRequestId').val(reqId > 0 ? String(reqId) : '');
 		$('#mdOperateRequestId').val(reqId > 0 ? String(reqId) : '');
 		$('#mdSeqHeadText').text('การขอเปลี่ยนแปลงโครงการ (ส่งตามลำดับ)');
@@ -10947,6 +11313,9 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		rid = parseInt(rid||'0', 10);
 		$('#pmPlanCanRequestId').val(rid ? String(rid) : '');
 		$('#pmPlanCanProjectId').val(pid ? String(pid) : '');
+		var detailHref = (typeof pmApprProjectDetailUrl === 'function') ? pmApprProjectDetailUrl(pid) : '';
+		if (detailHref) $('#pmPlanCanDetailBtn').attr('href', detailHref).show();
+		else $('#pmPlanCanDetailBtn').attr('href', '#').hide();
 		$('#pmPlanCanName, #pmPlanCanName2, #pmPlanCanCode, #pmPlanCanBudgetSrc, #pmPlanCanSender').text('-');
 		$('#pmPlanCanBudget').text('0');
 		$('#pmPlanCanReason').text('กำลังโหลด...');
@@ -10968,6 +11337,8 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 			var req = res.request || {};
 			$('#pmPlanCanRequestId').val(String(req.id || rid || ''));
 			$('#pmPlanCanProjectId').val(String(req.project_id || pid || ''));
+			var detailHref2 = (typeof pmApprProjectDetailUrl === 'function') ? pmApprProjectDetailUrl(req.project_id || pid) : '';
+			if (detailHref2) $('#pmPlanCanDetailBtn').attr('href', detailHref2).show();
 			$('#pmPlanCanName, #pmPlanCanName2').text(req.project_name || '-');
 			$('#pmPlanCanCode').text(req.project_code || '-');
 			$('#pmPlanCanBudgetSrc').text(req.budget_source || '-');
@@ -11110,6 +11481,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		$('#mdSeqList').empty();
 		$('#mdCertFlowType').val('report');
 		$('#mdCertProjectId').val(String(pid));
+		try { pmApprRefreshModalDetailLinks({}); } catch(_eDetRp) {}
 		$('#mdOperateRequestId').val('');
 		$('#mdSeqHeadText').text('การส่งรายงานผลโครงการ (ส่งตามลำดับ)');
 		$('#mdSummaryHead').html('<tr><th style="width:220px;">รายการ</th><th>รายละเอียด</th></tr>');
