@@ -2119,13 +2119,18 @@ if (!function_exists('pm_collect_project_budget_report_data')) {
 				$budgetDescVal = function_exists('pmProjectActivityBudgetDescValue')
 					? pmProjectActivityBudgetDescValue($it, $budgetDescCol)
 					: trim((string)($it['detail'] ?? $it['budget_item'] ?? ''));
-				$calcTxt = function_exists('pm_budget_item_calc_text')
-					? pm_budget_item_calc_text(is_array($it) ? $it : [])
-					: trim(
-						($it['price'] ?? '') . ' บาท x ' .
-						($it['qty1'] ?? '') . ' ' . ($it['unit1'] ?? '') .
-						((!empty($it['qty2']) && (float)$it['qty2'] > 0) ? (' x ' . ($it['qty2'] ?? '') . ' ' . ($it['unit2'] ?? '')) : '')
-					);
+				$isNoExpenseItem = function_exists('pm_expense_category_id_is_no_expense')
+					&& pm_expense_category_id_is_no_expense($db_Project, (string)($it['code_expenses'] ?? ''));
+				$calcTxt = '';
+				if (!$isNoExpenseItem) {
+					$calcTxt = function_exists('pm_budget_item_calc_text')
+						? pm_budget_item_calc_text(is_array($it) ? $it : [])
+						: trim(
+							($it['price'] ?? '') . ' บาท x ' .
+							($it['qty1'] ?? '') . ' ' . ($it['unit1'] ?? '') .
+							((!empty($it['qty2']) && (float)$it['qty2'] > 0) ? (' x ' . ($it['qty2'] ?? '') . ' ' . ($it['unit2'] ?? '')) : '')
+						);
+				}
 				$itemLines = $linesByItem[$itemId] ?? [];
 				$itemDisb = 0.0;
 				foreach ($itemLines as $ln) {
@@ -2970,6 +2975,44 @@ if (!function_exists('pm_budget_other_action_type_label')) {
 	}
 }
 
+// All loan integration is server-to-server HTTP; no loan database connection.
+function pm_project_loan_api($db_Project, int $projectId, string $actionType = 'loan'): array
+{
+    $stmt = mysqli_prepare($db_Project, 'SELECT code_pre_project, year_project FROM pre_project WHERE id = ? LIMIT 1');
+    mysqli_stmt_bind_param($stmt, 'i', $projectId);
+    mysqli_stmt_execute($stmt);
+    $project = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+    mysqli_stmt_close($stmt);
+    $code = trim((string)($project['code_pre_project'] ?? ''));
+    $year = (int)($project['year_project'] ?? 0);
+    if ($year > 2400) $year -= 543;
+    $loanConfig = require __DIR__.'/../config/loan_api.php';
+    $isTravel = $actionType === 'travel';
+    $systemLabel = $isTravel ? 'ขออนุมัติเดินทาง' : 'เงินยืม';
+    $secret = (string)($loanConfig[$isTravel ? 'travel_secret' : 'secret'] ?? '');
+    if ($code === '' || $year <= 0 || $secret === '') {
+        return ['ok' => 0, 'msg' => 'ไม่พบรหัสโครงการ ปีงบประมาณ หรือการตั้งค่า API เงินยืม'];
+    }
+    $timestamp = time();
+    $params = ['project_code' => $code, 'year_bud' => $year, 'timestamp' => $timestamp,
+        'signature' => hash_hmac('sha256', $code.'|'.$year.'|'.$timestamp, $secret)];
+    $base = rtrim(pm_dotenv_get('PROJECT_LOAN_API_BASE_URL', 'https://mis.pharmacy.cmu.ac.th/loan_money'), '/');
+    if ($isTravel) $base = rtrim(pm_dotenv_get('PROJECT_TRAVEL_API_BASE_URL', 'https://mis.pharmacy.cmu.ac.th/leaves_mission'), '/');
+    $endpoint = $isTravel ? '/api/integration/projects/travel' : '/api/integration/projects/loans';
+    $url = $base.$endpoint.'?'.http_build_query($params);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_TIMEOUT => 20, CURLOPT_HTTPHEADER => ['Accept: application/json']]);
+    $body = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    $result = json_decode((string)$body, true);
+    if ($status !== 200 || !is_array($result) || empty($result['ok'])) {
+        return ['ok' => 0, 'msg' => 'เชื่อมต่อ API ระบบ'.$systemLabel.'ไม่สำเร็จ กรุณาลองใหม่'];
+    }
+    return $result;
+}
+
 if (!function_exists('pm_load_budget_other_actions')) {
 	function pm_load_budget_other_actions($db_Project, $project_id): array
 	{
@@ -2981,7 +3024,7 @@ if (!function_exists('pm_load_budget_other_actions')) {
 			ensureBudgetOtherActionSchema($db_Project);
 		}
 		$list = [];
-		$q = @mysqli_query($db_Project, "SELECT * FROM project_budget_other_action WHERE project_id='" . $pid . "' AND status='1' ORDER BY request_date DESC, id DESC");
+		$q = @mysqli_query($db_Project, "SELECT * FROM project_budget_other_action WHERE project_id='" . $pid . "' AND status='1' AND action_type NOT IN ('loan', 'travel') ORDER BY request_date DESC, id DESC");
 		if ($q) {
 			while ($row = mysqli_fetch_assoc($q)) {
 				$list[] = $row;
@@ -2995,6 +3038,11 @@ if (!function_exists('pm_render_budget_other_actions_table')) {
 	function pm_render_budget_other_actions_table($db_Project, $db_person, int $project_id, bool $allow_edit = true): void
 	{
 		$rows = pm_load_budget_other_actions($db_Project, $project_id);
+		$loanResult = pm_project_loan_api($db_Project, $project_id);
+		if (!empty($loanResult['ok'])) $rows = array_merge($rows, $loanResult['data'] ?? []);
+        $travelResult = pm_project_loan_api($db_Project, $project_id, 'travel');
+        if (!empty($travelResult['ok'])) $rows = array_merge($rows, $travelResult['data'] ?? []);
+        usort($rows, static function ($a, $b) { return strcmp((string)($b['request_date'] ?? ''), (string)($a['request_date'] ?? '')); });
 		$fmt = function ($v) {
 			$f = (float)$v;
 			if ($f == 0.0) {
@@ -3004,7 +3052,13 @@ if (!function_exists('pm_render_budget_other_actions_table')) {
 		};
 		?>
 		<div class="pm-budget-other-actions-wrap">
-			<div class="pm-budget-other-actions-head">
+            <?php if (empty($loanResult['ok'])): ?>
+                <div class="alert alert-warning"><?= htmlspecialchars($loanResult['msg'], ENT_QUOTES, 'UTF-8') ?></div>
+            <?php endif ?>
+			<?php if (empty($travelResult['ok'])): ?>
+                <div class="alert alert-warning"><?= htmlspecialchars($travelResult['msg'], ENT_QUOTES, 'UTF-8') ?></div>
+            <?php endif ?>
+            <div class="pm-budget-other-actions-head">
 				<div class="pm-budget-section-label">การดำเนินการอื่นๆ :</div>
 				<?php if ($allow_edit): ?>
 				<div class="pm-budget-other-actions-btns">
@@ -3036,7 +3090,7 @@ if (!function_exists('pm_render_budget_other_actions_table')) {
 						<?php else: ?>
 							<?php foreach ($rows as $row):
 								$type = trim((string)($row['action_type'] ?? 'loan'));
-								$staffName = pm_get_staff_display_name_by_id($db_person, (int)($row['staff_insert'] ?? 0));
+								$staffName = $row['staff_name'] ?? pm_get_staff_display_name_by_id($db_person, (int)($row['staff_insert'] ?? 0));
 								$detail = trim((string)($row['detail'] ?? ''));
 								$statusLabel = trim((string)($row['status_label'] ?? ''));
 								$docUrl = trim((string)($row['doc_url'] ?? ''));
@@ -4907,6 +4961,12 @@ if ($op === 'create_budget_other_action_ajax') {
 		exit;
 	}
 	pm_exit_if_result_report_edit_blocked($db_Project, $project_id);
+    if (in_array($action_type, ['loan', 'travel'], true)) {
+        $result = pm_project_loan_api($db_Project, $project_id, $action_type);
+        echo json_encode($result, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
 	if (function_exists('ensureBudgetOtherActionSchema')) {
 		ensureBudgetOtherActionSchema($db_Project);
 	}
@@ -5597,7 +5657,7 @@ if ($op === 'render_budget_table') {
 												<span class="text-muted text-90"> (<?= htmlspecialchars($budgetDescVal) ?>)</span>
 											<?php endif ?>
 										</div>
-										<?php if ($calcTxt !== '' && $calcTxt !== ' บาท x  '): ?>
+										<?php if (!$isNoExpenseItem && $calcTxt !== '' && $calcTxt !== ' บาท x  '): ?>
 											<div class="pm-budget-item-calc text-muted text-90"><?= htmlspecialchars($calcTxt) ?></div>
 										<?php endif ?>
 										<?php if (!$is_locked_project): ?>
@@ -5610,7 +5670,7 @@ if ($op === 'render_budget_table') {
 										<?php endif ?>
 									</td>
 									<td class="text-center">
-										<div class="font-weight-bold text-95<?= $itemPlanMissing ? ' pm-budget-total-incomplete' : ' pm-budget-total-complete' ?>"><?= $fmtNum($isNoExpenseItem ? 0 : ($it['total'] ?? 0)) ?></div>
+										<div class="font-weight-bold text-95<?= $itemPlanMissing ? ' pm-budget-total-incomplete' : ' pm-budget-total-complete' ?>"><?= $isNoExpenseItem ? '' : $fmtNum($it['total'] ?? 0) ?></div>
 										<?php if (!$is_locked_project && !$isNoExpenseItem && $itemTotalVal > 0.0001): ?>
 											<button type="button" class="btn btn-sm mt-1 <?= $itemPlanMissing ? 'btn-warning text-dark' : 'btn-light' ?>" data-action="budget-plan" data-plan="<?= $planJson ?>" title="<?= $itemPlanMissing ? ($itemPlanEmpty ? 'ยังไม่ได้กรอกแผนการใช้จ่าย' : 'กรอกแผนการใช้จ่ายยังไม่ครบตามยอดรายการ') : 'แก้ไขแผนการใช้จ่าย' ?>">
 												<i class="fa fa-calendar-alt mr-1"></i> แผนการใช้จ่าย<?= $itemPlanMissing ? ' *' : '' ?>
@@ -17860,9 +17920,13 @@ if ($op === 'add_project') {
 								<div class="text-center text-muted py-4"><i class="fa fa-spinner fa-spin mr-1"></i> กำลังโหลด...</div>
 							</div>
 							<div class="modal-footer justify-content-between align-items-center">
-								<button type="button" class="btn btn-primary d-none" id="btnBudgetDisburseExternalOpenSystem">
-									<i class="fa fa-external-link-alt mr-1"></i> เปิดในระบบเบิกจ่าย
-								</button>
+                                <?php $pmWithdrawHomeUrl = rtrim(pm_pbm_withdraw_base_url(), '/') . '/withdraw/project'; ?>
+                                <a class="btn btn-primary" id="btnBudgetDisburseExternalOpenSystem"
+                                   href="<?= htmlspecialchars($pmWithdrawHomeUrl, ENT_QUOTES, 'UTF-8') ?>"
+                                   data-default-url="<?= htmlspecialchars($pmWithdrawHomeUrl, ENT_QUOTES, 'UTF-8') ?>"
+                                   target="_blank" rel="noopener noreferrer">
+                                    <i class="fa fa-external-link-alt mr-1"></i> ไปที่ระบบเบิกจ่าย
+                                </a>
 								<button type="button" class="btn btn-secondary pm-budget-disburse-ext-close ml-auto"><i class="fa fa-times mr-1"></i> ปิด</button>
 							</div>
 						</div>
@@ -23496,6 +23560,13 @@ if ($op === 'add_project') {
 							box.innerHTML = '<div class="alert alert-info text-center mb-0">'+esc(copy.need)+'</div>';
 							return;
 						}
+						var subItems = (typeGroup() === 'mission' && kind !== 'so' && subprocessBySide && sideVal)
+							? (subprocessBySide[String(sideVal)] || [])
+							: [];
+						if (subItems.length && !String(st.code_subprocess || '')) {
+							box.innerHTML = '<div class="alert alert-info text-center mb-0">กรุณาเลือกกระบวนการย่อย</div>';
+							return;
+						}
 						box.innerHTML = '<div class="alert alert-info text-center mb-0">กำลังโหลดตัวชี้วัด...</div>';
 						var yearNow = consistencyYear();
 						var yearHid = document.querySelector('#form-consistency-kpi input[name="years_select"]');
@@ -23517,7 +23588,9 @@ if ($op === 'add_project') {
 						}).done(function(res){
 							var html = '';
 							if (!res || !res.length) {
-								html = '<div class="alert alert-warning mb-2">ไม่พบตัวชี้วัดตามประเภท/รายการที่เลือก</div>';
+								html = '<div class="alert alert-warning mb-2">'
+									+ (String(st.code_subprocess || '') !== '' ? 'ไม่พบตัวชี้วัดของกระบวนการย่อยนี้' : 'ไม่พบตัวชี้วัดตามประเภท/รายการที่เลือก')
+									+ '</div>';
 							} else {
 								res.forEach(function(item, kidx){
 									var cid = 'pm-cons-kpi-' + idx + '-' + kidx;
@@ -25885,9 +25958,12 @@ if ($op === 'add_project') {
 							: '<i class="fa fa-external-link-alt mr-1"></i> เปิดในระบบเบิกจ่าย';
 						$btn.html(label).removeClass('d-none').prop('disabled', false);
 					} else {
-						$modal.removeData('withdraw-open-url');
-						$btn.addClass('d-none').prop('disabled', true);
+                        $modal.removeData('withdraw-open-url');
+                        url = String($btn.attr('data-default-url') || '').trim();
+                        $btn.html('<i class="fa fa-external-link-alt mr-1"></i> ไปที่ระบบเบิกจ่าย')
+                            .removeClass('d-none').prop('disabled', false);
 					}
+                    $btn.attr('href', url);
 				}
 				function openExternalDoc(lineId, docLabel){
 					lineId = parseInt(lineId || '0', 10);
@@ -25924,16 +26000,6 @@ if ($op === 'add_project') {
 						showError(msg);
 					});
 				}
-				$(document).on('click', '#btnBudgetDisburseExternalOpenSystem', function(e){
-					e.preventDefault();
-					var url = String($modal.data('withdraw-open-url') || '').trim();
-					if (!url) return;
-					try {
-						window.open(url, '_blank', 'noopener');
-					} catch (err) {
-						window.location.href = url;
-					}
-				});
 				$(document).on('click', '.pm-ber-disburse-doc-btn', function(e){
 					e.preventDefault();
 					e.stopPropagation();
@@ -25947,6 +26013,9 @@ if ($op === 'add_project') {
 			})();
 
 			(function initBudgetOtherActions(){
+                $(window).on('pageshow.pmLoan focus.pmLoan', function(){
+                    if ($('.pm-budget-other-actions-wrap').length) loadBudgetTable();
+                });
 				var actionLabels = { loan: 'ขอยืมเงิน', travel: 'ขออนุมัติเดินทาง' };
 				function confirmCreateOtherAction(actionType, $btn){
 					if (!projectId) return;
@@ -25996,6 +26065,31 @@ if ($op === 'add_project') {
 					var $btn = $(this);
 					var actionType = ($btn.attr('data-action-type') || '').toString();
 					if (actionType !== 'loan' && actionType !== 'travel') return;
+                    if (actionType === 'loan' || actionType === 'travel') {
+                        // Open during the click event so browsers allow the new tab before the API returns.
+                        var targetTab = window.open('about:blank', '_blank');
+                        if (!targetTab) {
+                            alert('กรุณาอนุญาตให้เปิดแท็บใหม่สำหรับเว็บไซต์นี้ แล้วลองอีกครั้ง');
+                            return;
+                        }
+                        targetTab.opener = null;
+                        $btn.prop('disabled', true);
+                        $.ajax({url: '?page=project_manage&op=create_budget_other_action_ajax',
+                            type: 'POST', dataType: 'json', data: {project_id: projectId, action_type: actionType}
+                        }).done(function(res){
+                            if (res && res.ok === 1 && res.open_url) {
+                                if (!targetTab.closed) targetTab.location.replace(res.open_url);
+                                return;
+                            }
+                            if (!targetTab.closed) targetTab.close();
+                            alert((res && res.msg) || 'เปิดระบบไม่สำเร็จ');
+                        }).fail(function(){
+                            if (!targetTab.closed) targetTab.close();
+                            alert('เชื่อมต่อระบบไม่สำเร็จ');
+                        })
+                          .always(function(){ $btn.prop('disabled', false); });
+                        return;
+                    }
 					confirmCreateOtherAction(actionType, $btn);
 				});
 			})();

@@ -8297,7 +8297,7 @@ function getKpiYearIndicatorSelect($db, $filter = [])
     $subprocess_val = isset($filter['subprocess']) ? trim((string)$filter['subprocess']) : '';
     if ($subprocess_val !== '' && $subprocess_val !== '0') {
         $sp = (int)$subprocess_val;
-        $where[] = "(yi.code_subprocess={$sp} OR yi.code_subprocess IS NULL OR yi.code_subprocess=0)";
+        $where[] = "yi.code_subprocess={$sp}";
     }
     $side_val = isset($filter['side']) ? trim((string)$filter['side']) : '';
     if ($side_val !== '') {
