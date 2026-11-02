@@ -464,18 +464,13 @@ if ($memo_type === 'change') {
 </table>
 ';
 } else {
-	// 2 บรรทัดตามแบบ ขนาดเดียวกับบรรทัดล่าง (10pt) — ห้าม nowrap เพื่อไม่ดันไปหน้า 2
-	$paraFace = 'font-family:sarabun; font-size:10pt; line-height:1.4;';
+	// บรรทัด "ด้วย" ตรงคอลัมน์ "คณบดี" บรรทัด "ผ่านระบบ..." ชิดซ้ายตรงคำว่า "เรียน"
+	$paraFace = 'font-family:sarabun; font-size:10pt; line-height:1.45; margin:0; text-align:left;';
+	$leadLine1 = 'ด้วย' . $unitShow . ' มีความประสงค์ขออนุมัติดำเนินการโครงการ';
+	$leadLine2 = 'ผ่านระบบบริหารจัดการโครงการ ของคณะเภสัชศาสตร์ ดังนี้';
 	$bodyHtml = '
-<table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
-<tr>
-	<td width="75" style="border:0; padding:6px 0 0 0; ' . $paraFace . '">&nbsp;</td>
-	<td style="border:0; padding:6px 0 0 0; ' . $paraFace . ' letter-spacing:-0.2pt;">ด้วย' . $h($unitShow) . ' มีความประสงค์ขออนุมัติดำเนินการโครงการผ่านระบบบริหารจัดการ</td>
-</tr>
-<tr>
-	<td colspan="2" style="border:0; padding:0 0 8px 0; ' . $paraFace . '">โครงการ ของคณะเภสัชศาสตร์ ดังนี้</td>
-</tr>
-</table>
+<div style="' . $paraFace . ' margin-top:6px; padding:0 0 0 77px;">' . $h($leadLine1) . '</div>
+<div style="' . $paraFace . ' margin-bottom:8px; padding:0 0 0 2px;">' . $h($leadLine2) . '</div>
 ';
 	$tableHtml = '
 <table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse; overflow: wrap;">
@@ -539,8 +534,8 @@ table { border-collapse: collapse; }
 	<td class="val">' . $h($date) . '</td>
 </tr>
 <tr>
-	<td class="lbl" width="75"><b>เรื่อง</b></td>
-	<td class="val" colspan="3">' . $subjectLine . '</td>
+	<td class="lbl" width="75" style="vertical-align:top;"><b>เรื่อง</b></td>
+	<td class="val" colspan="3" style="vertical-align:top;">' . $subjectLine . '</td>
 </tr>
 <tr class="to-line">
 	<td class="lbl" width="75"><b>เรียน</b></td>

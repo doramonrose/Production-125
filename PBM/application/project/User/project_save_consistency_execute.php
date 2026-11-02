@@ -167,20 +167,26 @@ if (!function_exists('project_all_execute_save_consistency_kpi')) {
 			foreach ($setsSave as $oneSet) {
 				$apEsc = mysqli_real_escape_string($db_Project, (string)$oneSet['code_ap']);
 				$sideEsc = mysqli_real_escape_string($db_Project, (string)$oneSet['code_side']);
-				$subEsc = mysqli_real_escape_string($db_Project, (string)($oneSet['code_subprocess'] ?? ''));
+				$subRaw = trim((string)($oneSet['code_subprocess'] ?? ''));
+				$subId = (ctype_digit($subRaw) && (int)$subRaw > 0) ? (int)$subRaw : 0;
 				$otherEsc = mysqli_real_escape_string($db_Project, (string)($oneSet['kpi_other'] ?? ''));
 				$subSqlCol = $hasSubCol ? ', code_subprocess' : '';
-				$subSqlVal = $hasSubCol ? (", '" . $subEsc . "'") : '';
+				$subSqlVal = $hasSubCol ? ($subId > 0 ? (', ' . $subId) : ', NULL') : '';
 				$otherSqlCol = $hasOtherCol ? ', kpi_other' : '';
 				$otherSqlVal = $hasOtherCol ? (", '" . $otherEsc . "'") : '';
-				$ins = mysqli_query(
-					$db_Project,
-					"INSERT INTO project_consistency (
-						project_id, code_kpi_type, code_so, code_ap, code_side{$subSqlCol}{$otherSqlCol}, status, staff_insert, dates
-					) VALUES (
-						'$pidEsc', '$typeEsc', '', '$apEsc', '$sideEsc'{$subSqlVal}{$otherSqlVal}, '1', '$staffEsc', NOW()
-					)"
-				);
+				try {
+					$ins = mysqli_query(
+						$db_Project,
+						"INSERT INTO project_consistency (
+							project_id, code_kpi_type, code_so, code_ap, code_side{$subSqlCol}{$otherSqlCol}, status, staff_insert, dates
+						) VALUES (
+							'$pidEsc', '$typeEsc', '', '$apEsc', '$sideEsc'{$subSqlVal}{$otherSqlVal}, '1', '$staffEsc', NOW()
+						)"
+					);
+				} catch (mysqli_sql_exception $e) {
+					$ins = false;
+					$failMsg = $e->getMessage() ?: $failMsg;
+				}
 				if (!$ins) {
 					$sql = false;
 					$failMsg = mysqli_error($db_Project) ?: $failMsg;

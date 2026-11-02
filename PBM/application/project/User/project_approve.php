@@ -1064,6 +1064,12 @@ if ($pm_appr_route_op === 'get_operate_project_detail') {
 		$budget_code_now = trim((string)($rPbNow['code_budget'] ?? ''));
 		$budget_other_now = trim((string)($rPbNow['budget_other'] ?? ''));
 	}
+	$budget_sources_now = function_exists('pm_project_budget_source_rows')
+		? pm_project_budget_source_rows($db_Project, (int)$project_id)
+		: [];
+	$budget_caps_now = function_exists('pm_project_budget_amount_caps')
+		? pm_project_budget_amount_caps($db_Project, (int)$project_id)
+		: ['approved' => null, 'expense' => $budget_baht];
 	$operate_submitter_reply_note = trim((string)($proj['operate_submitter_reply_note'] ?? ''));
 	$operate_submitter_reply_updated_at = trim((string)($proj['operate_submitter_reply_updated_at'] ?? ''));
 
@@ -1293,8 +1299,10 @@ if ($pm_appr_route_op === 'get_operate_project_detail') {
 		}
 	}
 	$approverJsonOperate = trim((string)($proj['operate_approvers_json'] ?? ''));
+	$operate_approvers_payload = [];
 	$useApproverChainDetail = $all_operate_chain_done_appr && $approverJsonOperate !== '';
 	if ($useApproverChainDetail && function_exists('pm_parse_operate_chain_json')) {
+		$operate_review_certifiers_payload = $certifiers_payload;
 		$apprList = pm_parse_operate_chain_json($approverJsonOperate);
 		if (!empty($apprList)) {
 			$certList = $apprList;
@@ -1407,6 +1415,8 @@ if ($pm_appr_route_op === 'get_operate_project_detail') {
 					}
 				));
 			}
+			$operate_approvers_payload = $certifiers_payload;
+			$certifiers_payload = $operate_review_certifiers_payload;
 		}
 	}
 	$notify_ok_pa_rechain = function_exists('pm_notify_allows_plan_admin_operate_rechain')
@@ -1589,6 +1599,8 @@ if ($pm_appr_route_op === 'get_operate_project_detail') {
 			'budget_source' => $budget_source,
 			'budget_code' => $budget_code_now,
 			'budget_other' => $budget_other_now,
+			'budget_sources' => $budget_sources_now,
+			'budget_caps' => $budget_caps_now,
 			'can_edit_budget' => !empty($pm_operate_can_edit_budget) ? 1 : 0,
 			'budget_options' => $pm_operate_budget_opts,
 			'is_midyear' => ((int)($proj['midyear_request'] ?? 0) === 1) ? 1 : 0,
@@ -1598,6 +1610,7 @@ if ($pm_appr_route_op === 'get_operate_project_detail') {
 		'project_group' => $project_group,
 		'include_request_id' => (int)$request_id_operate,
 		'certifiers' => $certifiers_payload,
+		'approvers' => $operate_approvers_payload,
 		'action_logs' => $operate_action_logs,
 		'submitter_reply' => [
 			'can_edit' => false,
@@ -6373,6 +6386,11 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		padding-left: 1.35rem;
 		counter-reset: seq;
 	}
+	#modalRequestDetail ol.md-seq-list.md-appr-list{
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
 	#modalRequestDetail .md-seq-list > li{
 		margin-bottom: .5rem;
 		padding: .55rem .75rem .55rem .35rem;
@@ -6569,6 +6587,147 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		font-size: .78rem;
 		font-weight: 900;
 		letter-spacing: .02em;
+	}
+	#modalRequestDetail .md-appr-card{
+		display: block;
+		width: 100%;
+		max-width: 100%;
+		box-sizing: border-box;
+		margin: .85rem 0 0;
+		position: static;
+		clear: both;
+	}
+	#modalRequestDetail .md-appr-banner{
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: .45rem .6rem;
+		margin-bottom: .85rem;
+		padding: .7rem .85rem;
+		border-radius: 10px;
+		border: 1px solid #e8def2;
+		background: #faf7fc;
+	}
+	#modalRequestDetail .md-appr-banner.is-wait{
+		border-color: #fde68a;
+		background: #fffbeb;
+	}
+	#modalRequestDetail .md-appr-banner.is-no{
+		border-color: #fecaca;
+		background: #fef2f2;
+	}
+	#modalRequestDetail .md-appr-banner-title{
+		display: inline-flex;
+		align-items: center;
+		gap: .4rem;
+		font-weight: 700;
+		color: #4a3263;
+	}
+	#modalRequestDetail .md-appr-banner.is-wait .md-appr-banner-title{ color: #92400e; }
+	#modalRequestDetail .md-appr-banner.is-no .md-appr-banner-title{ color: #991b1b; }
+	#modalRequestDetail .md-appr-chip{
+		display: inline-flex;
+		align-items: center;
+		gap: .35rem;
+		padding: .28rem .7rem;
+		border-radius: 999px;
+		background: #fff;
+		border: 1px solid #e8def2;
+		color: #4a3263;
+		font-weight: 700;
+		font-size: .84rem;
+	}
+	#modalRequestDetail .md-appr-chip-date{
+		background: #fff;
+		border-color: #e8def2;
+	}
+	#modalRequestDetail .md-appr-timeline{
+		margin-top: 0;
+		padding: 0;
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+	}
+	#modalRequestDetail .md-appr-timeline-title{
+		font-weight: 700;
+		color: #4a3263;
+		margin-bottom: .7rem;
+	}
+	#modalRequestDetail .md-appr-item{
+		display: flex;
+		gap: .65rem;
+		align-items: flex-start;
+	}
+	#modalRequestDetail .md-appr-item + .md-appr-item{
+		margin-top: .75rem;
+		padding-top: .75rem;
+		border-top: 1px dashed rgba(148,163,184,.55);
+	}
+	#modalRequestDetail .md-appr-dot{
+		width: 1.55rem;
+		height: 1.55rem;
+		border-radius: 999px;
+		background: #f3eef8;
+		border: 1px solid #e8def2;
+		color: #734d96;
+		font-weight: 700;
+		font-size: .85rem;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+	#modalRequestDetail .md-appr-body{ min-width: 0; flex: 1; }
+	#modalRequestDetail .md-appr-head{
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: .35rem .5rem;
+	}
+	#modalRequestDetail .md-appr-name{ color: #4a3263; font-weight: 600; }
+	#modalRequestDetail .md-appr-pos{ color: #64748b; font-size: .82rem; }
+	#modalRequestDetail .md-appr-status{
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: .45rem;
+		margin-top: .2rem;
+	}
+	#modalRequestDetail .md-appr-badge{
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 4.6rem;
+		padding: .28rem .8rem;
+		border-radius: 999px;
+		font-weight: 700;
+		font-size: .84rem;
+		line-height: 1.15;
+		border: 1px solid transparent;
+	}
+	#modalRequestDetail .md-appr-badge.ok{
+		background: #dcfce7;
+		color: #166534;
+		border-color: #86efac;
+	}
+	#modalRequestDetail .md-appr-badge.warn{
+		background: #fef9c3;
+		color: #854d0e;
+		border-color: #fde68a;
+	}
+	#modalRequestDetail .md-appr-badge.no{
+		background: #fee2e2;
+		color: #991b1b;
+		border-color: #fca5a5;
+	}
+	#modalRequestDetail .md-appr-when{
+		color: #64748b;
+		font-size: .82rem;
+	}
+	#modalRequestDetail .md-appr-note{
+		margin-top: .35rem;
+		color: #334155;
+		font-size: .9rem;
 	}
 	#modalRequestDetail .md-seq-pill-ok{
 		background: #f4f8ef;
@@ -8141,6 +8300,19 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 						</div>
 					</div>
 				</div>
+				<div id="mdSeqApproverWrap" class="md-seq-card md-appr-card" style="display:none;">
+					<div class="md-seq-head md-seq-head-toggle is-collapsed" id="mdSeqApproverHead" role="button" tabindex="0" data-foldable="1">
+						<span>การอนุมัติโครงการ</span>
+						<i class="fa fa-chevron-down md-seq-head-chevron"></i>
+					</div>
+					<div class="md-seq-body" id="mdSeqApproverBody" style="display:none;">
+						<div id="mdSeqApproverBanner"></div>
+						<div class="md-appr-timeline">
+							<div class="md-appr-timeline-title">ลำดับผู้อนุมัติ</div>
+							<div id="mdSeqApproverList"></div>
+						</div>
+					</div>
+				</div>
 			</div>
 			<div class="modal-footer d-flex flex-wrap align-items-center justify-content-between">
 				<button type="button" class="btn btn-outline-primary btn-sm" id="mdCopyApproveLinkBtn" style="display:none;" title="คัดลอกลิงก์ส่งให้ผู้ตรวจสอบเปิดหน้านี้โดยตรง (ต้องล็อกอินด้วยบัญชีผู้ตรวจสอบ)">
@@ -8590,7 +8762,9 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 					code: String(od.budget_code || ''),
 					other: String(od.budget_other || ''),
 					projectYear: String((src && src.request && src.request.budget_year) || ''),
-					opts: Array.isArray(od.budget_options) ? od.budget_options : []
+					opts: Array.isArray(od.budget_options) ? od.budget_options : [],
+					sources: Array.isArray(od.budget_sources) ? od.budget_sources : [],
+					caps: od.budget_caps || {approved: null, expense: od.budget_baht}
 				};
 				var srcShow = (bsrc && bsrc !== '-') ? bsrc : 'ยังไม่ได้เลือก';
 				bsrcCell = '<div class="d-flex flex-wrap align-items-center" style="gap:.4rem;">'
@@ -8603,6 +8777,12 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 					+ '<input type="search" id="mdBudgetSearch" class="form-control form-control-sm mb-2" placeholder="ค้นหารหัสงบ / ชื่อแหล่ง">'
 					+ '<select id="mdBudgetCode" class="form-control form-control-sm" size="6"></select>'
 					+ '<input type="text" id="mdBudgetOther" class="form-control form-control-sm mt-2 d-none" placeholder="ระบุแหล่งงบประมาณอื่น ๆ">'
+					+ '<div class="d-flex align-items-center mt-2" style="gap:.4rem;">'
+					+ '<input type="number" id="mdBudgetAmount" class="form-control form-control-sm" min="0.01" step="0.01" placeholder="จำนวนเงิน (บาท)" style="max-width:11rem;">'
+					+ '<button type="button" class="btn btn-sm btn-outline-primary font-weight-bold" id="mdBtnBudgetAdd">เพิ่มแหล่งนี้</button>'
+					+ '</div>'
+					+ '<div id="mdBudgetChosen" class="mt-2"></div>'
+					+ '<div id="mdBudgetCapNote" class="small text-muted mt-1"></div>'
 					+ '<div class="mt-2">'
 					+ '<button type="button" class="btn btn-sm btn-success font-weight-bold" id="mdBtnBudgetSave">บันทึกแหล่งงบประมาณ</button> '
 					+ '<button type="button" class="btn btn-sm btn-outline-secondary" id="mdBtnBudgetCancel">ยกเลิก</button>'
@@ -9152,10 +9332,99 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 			$('#mdBudgetOther').val(String(pack.other || ''));
 		}
 	}
+	var mdBudgetChosen = [];
+	function mdBudgetMoney(n){
+		var x = parseFloat(n);
+		if (!isFinite(x)) return '0.00';
+		return x.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+	}
+	function mdBudgetSum(){
+		var s = 0;
+		mdBudgetChosen.forEach(function(it){ s += parseFloat(it.amount) || 0; });
+		return Math.round(s * 100) / 100;
+	}
+	function mdRenderBudgetChosen(){
+		var $box = $('#mdBudgetChosen');
+		if (!$box.length) return;
+		$box.empty();
+		if (!mdBudgetChosen.length) {
+			$box.append('<div class="small text-muted">ยังไม่ได้เพิ่มแหล่งงบ</div>');
+		}
+		mdBudgetChosen.forEach(function(it, idx){
+			var $row = $('<div class="d-flex align-items-center mb-1" style="gap:.35rem;">');
+			$row.append($('<div class="small flex-grow-1">').text(it.label));
+			$row.append($('<div class="small text-nowrap">').text(mdBudgetMoney(it.amount) + ' บาท'));
+			$row.append($('<button type="button" class="btn btn-sm btn-outline-danger">ลบ</button>').on('click', function(){
+				mdBudgetChosen.splice(idx, 1);
+				mdRenderBudgetChosen();
+			}));
+			$box.append($row);
+		});
+		var pack = window.pmApprBudgetEdit || {};
+		var caps = pack.caps || {};
+		var note = 'รวม ' + mdBudgetMoney(mdBudgetSum()) + ' บาท';
+		if (caps.approved !== null && caps.approved !== undefined && caps.approved !== '') {
+			note += ' · ห้ามเกินงบที่อนุมัติ ' + mdBudgetMoney(caps.approved) + ' บาท';
+		}
+		note += ' · ห้ามเกินยอดรายละเอียดค่าใช้จ่าย ' + mdBudgetMoney(caps.expense) + ' บาท';
+		$('#mdBudgetCapNote').text(note);
+	}
+	function mdSeedBudgetChosen(){
+		var pack = window.pmApprBudgetEdit || {};
+		mdBudgetChosen = [];
+		(Array.isArray(pack.sources) ? pack.sources : []).forEach(function(it){
+			if (it.amount === null || it.amount === undefined || it.amount === '') return;
+			mdBudgetChosen.push({
+				code: String(it.code || ''),
+				other: String(it.other || ''),
+				amount: String(it.amount),
+				label: String(it.label || it.code || '')
+			});
+		});
+		mdRenderBudgetChosen();
+	}
 	$(document).on('click', '#mdBtnBudgetEdit', function(){
 		$('#mdBudgetEditBox').removeClass('d-none');
 		pmApprFillBudgetYears();
 		pmApprFillBudgetSelect();
+		mdSeedBudgetChosen();
+	});
+	$(document).on('click', '#mdBtnBudgetAdd', function(){
+		var pack = window.pmApprBudgetEdit || {};
+		var opts = Array.isArray(pack.opts) ? pack.opts : [];
+		var code = String($('#mdBudgetCode').val() || '').trim();
+		var other = String($('#mdBudgetOther').val() || '').trim();
+		var n = parseFloat(String($('#mdBudgetAmount').val() || '').trim());
+		if (!code) {
+			if (typeof Swal !== 'undefined') Swal.fire({icon:'warning', title:'กรุณาเลือกแหล่งงบประมาณ'});
+			else alert('กรุณาเลือกแหล่งงบประมาณ');
+			return;
+		}
+		if (code === '99' && !other) {
+			if (typeof Swal !== 'undefined') Swal.fire({icon:'warning', title:'กรุณาระบุแหล่งงบประมาณอื่น ๆ'});
+			else alert('กรุณาระบุแหล่งงบประมาณอื่น ๆ');
+			return;
+		}
+		if (!isFinite(n) || n <= 0) {
+			if (typeof Swal !== 'undefined') Swal.fire({icon:'warning', title:'กรุณาระบุจำนวนเงิน'});
+			else alert('กรุณาระบุจำนวนเงิน');
+			return;
+		}
+		var opt = null;
+		opts.forEach(function(it){ if (String((it || {}).id || '') === code) opt = it; });
+		var label = code === '99' ? other : (opt ? (String(opt.code || code) + ' — ' + String(opt.name || '')) : code);
+		var key = code + '\n' + (code === '99' ? other : '');
+		for (var i = 0; i < mdBudgetChosen.length; i++) {
+			var ck = mdBudgetChosen[i].code + '\n' + (mdBudgetChosen[i].code === '99' ? mdBudgetChosen[i].other : '');
+			if (ck === key) {
+				if (typeof Swal !== 'undefined') Swal.fire({icon:'warning', title:'แหล่งงบนี้ถูกเพิ่มแล้ว'});
+				else alert('แหล่งงบนี้ถูกเพิ่มแล้ว');
+				return;
+			}
+		}
+		mdBudgetChosen.push({code: code, other: code === '99' ? other : '', amount: String(n), label: label});
+		$('#mdBudgetAmount').val('');
+		mdRenderBudgetChosen();
 	});
 	$(document).on('click', '#mdBtnBudgetCancel', function(){
 		$('#mdBudgetEditBox').addClass('d-none');
@@ -9171,18 +9440,14 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 	$(document).on('click', '#mdBtnBudgetSave', function(){
 		var pack = window.pmApprBudgetEdit || {};
 		var projectId = parseInt(pack.projectId || 0, 10) || 0;
-		var code = String($('#mdBudgetCode').val() || '').trim();
-		var other = String($('#mdBudgetOther').val() || '').trim();
-		if (!projectId || !code) {
-			if (typeof Swal !== 'undefined') Swal.fire({icon:'warning', title:'กรุณาเลือกแหล่งงบประมาณ'});
-			else alert('กรุณาเลือกแหล่งงบประมาณ');
+		if (!projectId || !mdBudgetChosen.length) {
+			if (typeof Swal !== 'undefined') Swal.fire({icon:'warning', title:'กรุณาเพิ่มแหล่งงบประมาณ'});
+			else alert('กรุณาเพิ่มแหล่งงบประมาณ');
 			return;
 		}
-		if (code === '99' && !other) {
-			if (typeof Swal !== 'undefined') Swal.fire({icon:'warning', title:'กรุณาระบุแหล่งงบประมาณอื่น ๆ'});
-			else alert('กรุณาระบุแหล่งงบประมาณอื่น ๆ');
-			return;
-		}
+		var payloadSources = mdBudgetChosen.map(function(it){
+			return {code: it.code, other: it.code === '99' ? it.other : '', amount: it.amount};
+		});
 		var $btn = $(this).prop('disabled', true);
 		$.ajax({
 			url: '?page=project_manage',
@@ -9191,24 +9456,27 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 			data: {
 				op: 'plan_admin_set_budget_source_ajax',
 				project_id: projectId,
-				budget_code: code,
-				budget_other: other
+				sources_json: JSON.stringify(payloadSources),
+				budget_code: payloadSources[0].code,
+				budget_other: payloadSources[0].other
 			}
 		}).done(function(raw){
 			var res = null;
 			try { res = JSON.parse(String(raw || '')); } catch (e) { res = null; }
 			if (res && Number(res.ok) === 1) {
 				var label = String(res.label || '').trim();
-				if (!label) label = (code === '99' ? other : code);
+				if (!label) label = payloadSources[0].code;
 				$('#mdBudgetSrcLabel').text(label);
 				$('#mdBudgetEditBox').addClass('d-none');
 				if (lastDetailResp && lastDetailResp.operate_detail) {
 					lastDetailResp.operate_detail.budget_source = label;
-					lastDetailResp.operate_detail.budget_code = code;
-					lastDetailResp.operate_detail.budget_other = code === '99' ? other : '';
+					lastDetailResp.operate_detail.budget_code = payloadSources[0].code;
+					lastDetailResp.operate_detail.budget_other = payloadSources[0].other;
+					lastDetailResp.operate_detail.budget_sources = payloadSources;
 				}
-				pack.code = code;
-				pack.other = code === '99' ? other : '';
+				pack.code = payloadSources[0].code;
+				pack.other = payloadSources[0].other;
+				pack.sources = mdBudgetChosen.slice();
 				$btn.prop('disabled', false);
 				if (typeof Swal !== 'undefined') Swal.fire({icon:'success', title:'บันทึกแหล่งงบประมาณแล้ว', timer:900, showConfirmButton:false});
 				return;
@@ -9358,6 +9626,8 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		$('#mdSeqCertFoldBtn').hide().removeClass('is-collapsed');
 		$('#mdSeqCertWrap').show();
 		var certs = resp && resp.certifiers ? resp.certifiers : [];
+		var operateApprovers = (flowType === 'operate' && resp && Array.isArray(resp.approvers)) ? resp.approvers : [];
+		var splitOperateChains = operateApprovers.length > 0;
 		if (!certs.length) {
 			if (flowType === 'operate' || flowType === 'report' || flowType === 'change') {
 				$w.show();
@@ -9367,7 +9637,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 					: (flowType === 'change'
 						? 'ยังไม่มีลำดับผู้รับรองคำขอเปลี่ยนแปลง'
 						: 'ยังไม่มีลำดับผู้ตรวจสอบในระบบการขอดำเนินการ (หรือยังไม่ได้บันทึกผู้ตรวจสอบในโครงการ)');
-				$('#mdSeqList').html('<li class="text-muted py-2 px-2">' + emptyMsg + '</li>');
+				$('#mdSeqList').removeClass('md-appr-list').html('<li class="text-muted py-2 px-2">' + emptyMsg + '</li>');
 				try { $('#mdSeqActorBlock').hide(); } catch(_eAb0) {}
 			} else {
 				$w.hide();
@@ -9447,7 +9717,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 			var metaHtml = '';
 			// แสดงประวัติการกระทำต่อเนื่องใต้ลำดับเดิม (จาก action log)
 			var soNow = parseInt(c.sort_order || '0', 10) || 0;
-			var bucket = (soNow > 0 && logsBySo[soNow]) ? logsBySo[soNow] : [];
+			var bucket = (!splitOperateChains && soNow > 0 && logsBySo[soNow]) ? logsBySo[soNow] : [];
 			if (bucket && bucket.length > 1) {
 				bucket = bucket.slice().sort(function(a, b){
 					var da = String((a && a.created_at) ? a.created_at : '');
@@ -9580,6 +9850,41 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 					metaHtml += '</div>';
 				}
 			}
+			if (flowType === 'operate') {
+				var passBadge = '';
+				if (st === 'approved') passBadge = '<span class="md-appr-badge ok">ผ่าน</span>';
+				else if (st === 'rejected') passBadge = '<span class="md-appr-badge no">ตีกลับเพื่อแก้ไข</span>';
+				else if (st === 'waiting_turn') passBadge = '<span class="md-appr-badge warn">รอตรวจสอบ</span>';
+				else passBadge = '<span class="md-appr-badge warn">รอลำดับก่อนหน้า</span>';
+				var whenTxt = '';
+				if (decidedAt) {
+					var whenBase = fmtThaiDateTime(decidedAt);
+					var whenClock = String(decidedAt).match(/(\d{2}):(\d{2})/);
+					whenTxt = (whenBase && whenBase !== '-' && whenClock) ? (whenBase + ' ' + whenClock[1] + ':' + whenClock[2] + ' น.') : whenBase;
+				}
+				var reviewEdit = '';
+				if (c.can_edit_row) {
+					var reviewSo = parseInt(c.sort_order || '0', 10) || 0;
+					if (reviewSo > 0) {
+						reviewEdit = ' <button type="button" class="btn btn-sm md-seq-edit-cert-row md-seq-edit-inline" data-sort-order="' + reviewSo + '" title="แก้ไขชื่อและตำแหน่งผู้พิจารณา"><i class="fa fa-pen"></i><span>แก้ไข</span></button>';
+					}
+				}
+				html += '<div class="md-appr-item">'
+					+ '<div class="md-appr-dot">' + $('<div/>').text(c.sort_order || '').html() + '</div>'
+					+ '<div class="md-appr-body">'
+					+ '<div class="md-appr-head"><span class="md-appr-name">' + $('<div/>').text(c.staff_name || '-').html() + '</span>'
+					+ (pos ? ('<span class="md-appr-pos">' + $('<div/>').text(pos).html() + '</span>') : '')
+					+ reviewEdit
+					+ '</div>'
+					+ '<div class="md-appr-status">' + passBadge
+					+ (whenTxt ? ('<span class="md-appr-when">' + $('<div/>').text(whenTxt).html() + '</span>') : '')
+					+ ((st === 'rejected' && srNote) ? '<span class="md-appr-badge warn">รอบรรจุ</span>' : '')
+					+ '</div>'
+					+ (note ? ('<div class="md-appr-note">' + $('<div/>').text(note).html() + '</div>') : '')
+					+ ((st === 'rejected' && srNote) ? ('<div class="md-appr-note">' + $('<div/>').text(srNote).html() + '</div>') : '')
+					+ '</div></div>';
+				return;
+			}
 			var posHtml = pos ? '<div class="md-seq-pos">' + $('<div/>').text(pos).html() + '</div>' : '<div class="md-seq-pos">&nbsp;</div>';
 			var activeCls = (st === 'waiting_turn') ? 'md-seq-li-active' : '';
 			var soTxt = String(c.sort_order || '');
@@ -9637,7 +9942,95 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 					+ '</li>';
 			});
 		} catch (_ePlanRet) {}
-		$('#mdSeqList').html(html);
+		$('#mdSeqList').toggleClass('md-appr-list', flowType === 'operate').html(html);
+		if (splitOperateChains) {
+			function escAppr(v){ return $('<div/>').text(v == null ? '' : String(v)).html(); }
+			function fmtApprWhen(dt){
+				var base = fmtThaiDateTime(dt);
+				var m = String(dt || '').match(/(\d{2}):(\d{2})/);
+				if (!base || base === '-' || !m) return base || '';
+				return base + ' ' + m[1] + ':' + m[2] + ' น.';
+			}
+			var okCount = 0;
+			var rejectCount = 0;
+			var lastApproved = null;
+			operateApprovers.forEach(function(c){
+				var stc = String(c.status || '');
+				if (stc === 'approved') {
+					okCount++;
+					if (String(c.decided_at || '').trim() !== '') lastApproved = c;
+				} else if (stc === 'rejected') {
+					rejectCount++;
+				}
+			});
+			if (okCount > 0) {
+				var totalAppr = operateApprovers.length;
+				var bannerCls = 'md-appr-banner';
+				var bannerTitle = '';
+				if (rejectCount > 0) {
+					bannerCls += ' is-no';
+					bannerTitle = '<i class="fa fa-undo"></i> ผู้อนุมัติตีกลับให้แก้ไข (' + okCount + '/' + totalAppr + ' ลำดับ)';
+				} else if (okCount === totalAppr) {
+					bannerTitle = '<i class="fa fa-check-circle"></i> โครงการได้รับการอนุมัติตาม Flow แล้ว (' + okCount + '/' + totalAppr + ' ลำดับ)';
+				} else {
+					bannerCls += ' is-wait';
+					bannerTitle = '<i class="fa fa-hourglass-half"></i> รอการอนุมัติโครงการตาม Flow (' + okCount + '/' + totalAppr + ' ลำดับ)';
+				}
+				var banner = '<div class="' + bannerCls + '"><span class="md-appr-banner-title">' + bannerTitle + '</span>';
+				if (lastApproved) {
+					banner += '<span class="md-appr-chip"><i class="fa fa-user"></i> ผู้อนุมัติ : ' + escAppr(lastApproved.staff_name || '-') + '</span>';
+					if (String(lastApproved.decided_at || '').trim() !== '') {
+						banner += '<span class="md-appr-chip md-appr-chip-date"><i class="fa fa-clock"></i> ' + escAppr(fmtApprWhen(lastApproved.decided_at)) + '</span>';
+					}
+				}
+				banner += '</div>';
+				$('#mdSeqApproverBanner').html(banner);
+				var apprHtml = '';
+				operateApprovers.forEach(function(c){
+					var st = String(c.status || '');
+					var tag = '';
+					if (st === 'approved') tag = '<span class="md-appr-badge ok">อนุมัติ</span>';
+					else if (st === 'rejected') tag = '<span class="md-appr-badge no">ตีกลับเพื่อแก้ไข</span>';
+					else if (st === 'waiting_turn') tag = '<span class="md-appr-badge warn">รออนุมัติ</span>';
+					else tag = '<span class="md-appr-badge warn">รอลำดับก่อนหน้า</span>';
+					var pos = String(c.position_title || '').trim();
+					var decidedAt = String(c.decided_at || '').trim();
+					var note = String(c.certifier_note || c.note || '').trim();
+					var editRowBtn = '';
+					if (c.can_edit_row) {
+						var soNum = parseInt(c.sort_order || '0', 10) || 0;
+						if (soNum > 0) {
+							editRowBtn = ' <button type="button" class="btn btn-sm md-seq-edit-cert-row md-seq-edit-inline" data-sort-order="' + soNum + '" title="แก้ไขชื่อและตำแหน่งผู้อนุมัติ"><i class="fa fa-pen"></i><span>แก้ไข</span></button>';
+						}
+					}
+					apprHtml += '<div class="md-appr-item">'
+						+ '<div class="md-appr-dot">' + escAppr(c.sort_order || '') + '</div>'
+						+ '<div class="md-appr-body">'
+						+ '<div class="md-appr-head"><span class="md-appr-name">' + escAppr(c.staff_name || '-') + '</span>'
+						+ (pos ? ('<span class="md-appr-pos">' + escAppr(pos) + '</span>') : '')
+						+ editRowBtn
+						+ '</div>'
+						+ '<div class="md-appr-status">' + tag
+						+ (decidedAt ? ('<span class="md-appr-when">' + escAppr(fmtApprWhen(decidedAt)) + '</span>') : '')
+						+ '</div>'
+						+ (note ? ('<div class="md-appr-note">' + escAppr(note) + '</div>') : '')
+						+ '</div></div>';
+				});
+				$('#mdSeqApproverList').html(apprHtml);
+				var apprDone = okCount === totalAppr;
+				$('#mdSeqApproverHead').toggleClass('is-collapsed', apprDone);
+				$('#mdSeqApproverBody').toggle(!apprDone);
+				$('#mdSeqApproverWrap').show();
+			} else {
+				$('#mdSeqApproverWrap').hide();
+				$('#mdSeqApproverBanner').empty();
+				$('#mdSeqApproverList').empty();
+			}
+		} else {
+			$('#mdSeqApproverWrap').hide();
+			$('#mdSeqApproverBanner').empty();
+			$('#mdSeqApproverList').empty();
+		}
 
 		// ไม่แสดง action log แยกกล่อง — จะแทรกต่อจากไทม์ไลน์รายลำดับแทน
 		try { $('#mdActionLogWrap').hide(); $('#mdActionLogList').empty(); } catch(eLog) {}
@@ -9676,11 +10069,12 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		}
 
 		// ผ่านครบทุกลำดับแล้ว — ซ่อนส่วน "การตรวจสอบ" (ฟอร์มผ่าน/ตีกลับ) เหลือเพียงประวัติด้านบน
+		var actingChain = splitOperateChains ? operateApprovers : certs;
 		var allSeqApproved = false;
 		try {
-			if (certs && certs.length) {
+			if (actingChain && actingChain.length) {
 				allSeqApproved = true;
-				certs.forEach(function(c){
+				actingChain.forEach(function(c){
 					if (String(c.status || '') !== 'approved') {
 						allSeqApproved = false;
 					}
@@ -9705,7 +10099,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		var myReviewerName = '';
 		var myStatus = '';
 		try {
-			(certs || []).forEach(function(c){
+			(actingChain || []).forEach(function(c){
 				var so = parseInt(c && c.sort_order ? c.sort_order : '0', 10);
 				if (so === mySort) {
 					myReviewerName = String((c && c.staff_name) ? c.staff_name : '');
@@ -9730,6 +10124,8 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		if (!reqId) reqId = String($('#mdRequestId').val() || '');
 		if (shouldShowReviewBlock) {
 			$('#mdSeqActorBlock').show();
+			$('#mdSeqActorBlock .md-review-title').text('การตรวจสอบ');
+			$('#mdCertBtnPass').text('ผ่าน');
 			$('#mdSeqCurrentName').text(String(myReviewerName || pl.current_turn_name || ''));
 			$('#mdCertRequestId').val(reqId);
 			$('#mdCertSortOrder').val(String(pl.my_sort_order || ''));
@@ -9756,7 +10152,13 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 			} else if (window.__pmPlanReportDecide) {
 				$('#mdSeqCurrentName').text('หน่วยแผนและงบประมาณ');
 				$('#mdSeqHint').html('<i class="fa fa-level-down text-secondary mr-1"></i> <strong>ผ่าน</strong> = ปิดโครงการ (B5) &nbsp;|&nbsp; <strong>ตีกลับ</strong> = ส่งให้ผู้ยื่นแก้ไขรายงานผล');
+			} else if (splitOperateChains) {
+				$('#mdSeqActorBlock .md-review-title').text('การอนุมัติ');
+				$('#mdCertBtnPass').text('อนุมัติ');
+				$('#mdSeqHint').html('<i class="fa fa-level-down text-secondary mr-1"></i> <strong>อนุมัติ</strong> ระบบจะส่งคำขอไปยังผู้อนุมัติลำดับถัดไป');
 			} else {
+				$('#mdSeqActorBlock .md-review-title').text('การตรวจสอบ');
+				$('#mdCertBtnPass').text('ผ่าน');
 				$('#mdSeqHint').html('<i class="fa fa-level-down text-secondary mr-1"></i> <strong>ผ่าน</strong> ระบบจะส่งคำขอไปยังผู้ตรวจสอบลำดับถัดไป');
 			}
 		} else {
@@ -11550,6 +11952,19 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		}
 		if (!link) return;
 		pmApprCopyLinkToClipboard(link, $b);
+	});
+	$(document).on('click', '#mdSeqApproverHead', function(){
+		if (String($(this).attr('data-foldable') || '') !== '1') return;
+		var $body = $('#mdSeqApproverBody');
+		var show = $body.is(':hidden');
+		$body.toggle(show);
+		$(this).toggleClass('is-collapsed', !show);
+	});
+	$(document).on('keydown', '#mdSeqApproverHead', function(e){
+		if (e.key !== 'Enter' && e.key !== ' ') return;
+		if (String($(this).attr('data-foldable') || '') !== '1') return;
+		e.preventDefault();
+		$(this).trigger('click');
 	});
 	$(document).on('click', '#mdSeqHead', function(){
 		if (String($(this).attr('data-foldable') || '') !== '1') return;

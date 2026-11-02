@@ -331,16 +331,12 @@ if ($consRows) {
 	}
 }
 
-$s3_fields = [];
-if ((int)($pre['midyear_request'] ?? 0) === 1) {
-	$s3_fields[] = ['label' => 'เหตุผลการขอเพิ่มโครงการระหว่างปี', 'val' => $pre['midyear_reason'] ?? ''];
-}
-$s3_fields = array_merge($s3_fields, [
+$s3_fields = [
 	['label' => 'ความสำคัญของโครงการ/หลักการและเหตุผล', 'val' => $pre['reson'] ?? ''],
 	['label' => 'ทบทวนผลการดำเนินโครงการที่ผ่านมา', 'val' => $pre['result'] ?? ''],
 	['label' => 'วัตถุประสงค์ของโครงการ', 'val' => $pre['objective'] ?? ''],
 	['label' => 'เป้าหมายโครงการ', 'val' => $pre['target_project'] ?? ''],
-]);
+];
 
 $kpis = function_exists('getProjectKPIList') ? getProjectKPIList($db_Project, $project_id) : [];
 $acts = function_exists('getProjectActivityList') ? getProjectActivityList($db_Project, $project_id) : [];

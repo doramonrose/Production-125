@@ -214,6 +214,29 @@ if (!function_exists('pm_parse_operate_chain_json')) {
 	}
 }
 
+if (!function_exists('pm_chain_entered_position')) {
+	/** ตำแหน่งที่กรอกในลำดับของคนนี้ ใช้รายการลำดับท้ายสุด */
+	function pm_chain_entered_position($json, int $staffId): string
+	{
+		if ($staffId <= 0 || !function_exists('pm_parse_operate_chain_json')) {
+			return '';
+		}
+		$found = '';
+		$map = pm_parse_operate_chain_json($json);
+		ksort($map, SORT_NUMERIC);
+		foreach ($map as $row) {
+			if ((int)($row['staff_id'] ?? 0) !== $staffId) {
+				continue;
+			}
+			$pos = trim((string)($row['position_title'] ?? ''));
+			if ($pos !== '') {
+				$found = $pos;
+			}
+		}
+		return $found;
+	}
+}
+
 if (!function_exists('pm_operate_chain_staff_in_json')) {
 	function pm_operate_chain_staff_in_json($json, $staff_id): bool
 	{
@@ -1063,6 +1086,15 @@ if (!function_exists('pm_build_approve_memo_payload_from_db')) {
 				}
 			}
 		}
+		if (function_exists('pm_chain_entered_position') && $proposerSid > 0) {
+			$typedProp = pm_chain_entered_position((string)($pre['operate_certifiers_json'] ?? ''), $proposerSid);
+			$typedPropLate = pm_chain_entered_position((string)($pre['operate_approvers_json'] ?? ''), $proposerSid);
+			if ($typedPropLate !== '') {
+				$proposerPos = $typedPropLate;
+			} elseif ($typedProp !== '') {
+				$proposerPos = $typedProp;
+			}
+		}
 		$proposerDate = $date;
 
 		// ผู้อนุมัติล่าสุดจาก decision
@@ -1071,8 +1103,9 @@ if (!function_exists('pm_build_approve_memo_payload_from_db')) {
 		$approverDate = $date;
 		$approverSid = 0;
 		$approverDateRaw = '';
+		$approverChainStaff = 0;
+		$approverChainJson = '';
 		$useApproverTable = trim((string)($pre['operate_approvers_json'] ?? '')) !== '';
-		$decTable = $useApproverTable ? 'project_operate_approver_decision' : 'project_operate_approver_decision';
 		// ถ้ามี operate_approvers_json ใช้ตาราง approver; ไม่งั้นลองทั้งสองตาราง
 		$tryTables = $useApproverTable
 			? ['project_operate_approver_decision']
@@ -1089,11 +1122,18 @@ if (!function_exists('pm_build_approve_memo_payload_from_db')) {
 			);
 			$rDec = $qDec ? mysqli_fetch_assoc($qDec) : null;
 			if ($rDec) {
+				$approverChainStaff = (int)($rDec['staff_id'] ?? 0);
 				$approverSid = (int)($rDec['decided_by_staff_id'] ?? 0);
 				if ($approverSid <= 0) {
-					$approverSid = (int)($rDec['staff_id'] ?? 0);
+					$approverSid = $approverChainStaff;
 				}
 				$approverDateRaw = trim((string)($rDec['decided_at'] ?? ''));
+				$approverChainJson = ($tbl === 'project_operate_certifier_decision')
+					? (string)($pre['operate_certifiers_json'] ?? '')
+					: (string)($pre['operate_approvers_json'] ?? '');
+				if (trim($approverChainJson) === '') {
+					$approverChainJson = (string)($pre['operate_certifiers_json'] ?? '');
+				}
 				break;
 			}
 		}
@@ -1120,6 +1160,12 @@ if (!function_exists('pm_build_approve_memo_payload_from_db')) {
 						$approverPos = trim((string)$rpd['name']);
 					}
 				}
+			}
+		}
+		if (function_exists('pm_chain_entered_position')) {
+			$typedAppr = pm_chain_entered_position($approverChainJson, $approverChainStaff > 0 ? $approverChainStaff : $approverSid);
+			if ($typedAppr !== '') {
+				$approverPos = $typedAppr;
 			}
 		}
 
@@ -1389,12 +1435,15 @@ if (!function_exists('pm_compute_operate_map_all_approved')) {
 
 if (!function_exists('pm_is_operate_returned_partial')) {
 	/** ตีกลับหลังขอดำเนินการของแผนประจำปี — แก้ได้บางข้อเหมือนก่อนขอดำเนินการ (ยังไม่ส่งกลับผู้รับรอง) */
-	function pm_is_operate_returned_partial($status_project, $notify_result = '', $reply_note = ''): bool
+	function pm_is_operate_returned_partial($status_project, $notify_result = '', $reply_note = '', $is_midyear = false): bool
 	{
 		if (trim((string)$reply_note) !== '') {
 			return false;
 		}
-		return ((string)$status_project === '8' && trim((string)$notify_result) === 'บรรจุแผน');
+		if ((string)$status_project !== '8') {
+			return false;
+		}
+		return trim((string)$notify_result) === 'บรรจุแผน' || !empty($is_midyear);
 	}
 }
 
@@ -4937,6 +4986,149 @@ function pm_format_budget_source_label($db_Project, $code_budget, $budget_other 
 	return $bo;
 }
 
+if (!function_exists('pm_ensure_project_budget_amount_column')) {
+	function pm_ensure_project_budget_amount_column($db_Project): void
+	{
+		static $done = false;
+		if ($done || !($db_Project instanceof mysqli)) {
+			return;
+		}
+		$done = true;
+		$q = @mysqli_query($db_Project, "SHOW COLUMNS FROM project_budget LIKE 'budget_amount'");
+		if ($q && mysqli_num_rows($q) > 0) {
+			return;
+		}
+		@mysqli_query($db_Project, "ALTER TABLE project_budget ADD COLUMN budget_amount DECIMAL(15,2) NULL DEFAULT NULL AFTER budget_other");
+	}
+}
+
+if (!function_exists('pm_project_budget_source_rows')) {
+	/** @return list<array{code:string,other:string,amount:?float,label:string}> */
+	function pm_project_budget_source_rows($db_Project, int $projectId): array
+	{
+		$projectId = (int)$projectId;
+		if ($projectId <= 0 || !($db_Project instanceof mysqli)) {
+			return [];
+		}
+		if (function_exists('pm_ensure_project_budget_amount_column')) {
+			pm_ensure_project_budget_amount_column($db_Project);
+		}
+		$hasAmt = false;
+		$qCol = @mysqli_query($db_Project, "SHOW COLUMNS FROM project_budget LIKE 'budget_amount'");
+		if ($qCol && mysqli_num_rows($qCol) > 0) {
+			$hasAmt = true;
+		}
+		$sql = "SELECT code_budget, budget_other" . ($hasAmt ? ", budget_amount" : "") . "
+			FROM project_budget
+			WHERE project_id='" . $projectId . "' AND status!='99'
+			ORDER BY id ASC";
+		$q = @mysqli_query($db_Project, $sql);
+		$out = [];
+		while ($q && ($r = mysqli_fetch_assoc($q))) {
+			$code = trim((string)($r['code_budget'] ?? ''));
+			$other = trim((string)($r['budget_other'] ?? ''));
+			if ($code === '' || $code === '0') {
+				continue;
+			}
+			$amount = null;
+			if ($hasAmt && array_key_exists('budget_amount', $r) && $r['budget_amount'] !== null && $r['budget_amount'] !== '') {
+				$amount = round((float)$r['budget_amount'], 2);
+			}
+			$label = function_exists('pm_format_budget_source_label')
+				? pm_format_budget_source_label($db_Project, $code, $other)
+				: ($other !== '' ? $other : $code);
+			$out[] = [
+				'code' => $code,
+				'other' => $other,
+				'amount' => $amount,
+				'label' => trim((string)$label) !== '' ? trim((string)$label) : $code,
+			];
+		}
+		return $out;
+	}
+}
+
+if (!function_exists('pm_project_budget_amount_caps')) {
+	/** @return array{approved:?float,expense:float} */
+	function pm_project_budget_amount_caps($db_Project, int $projectId): array
+	{
+		$projectId = (int)$projectId;
+		$out = ['approved' => null, 'expense' => 0.0];
+		if ($projectId <= 0 || !($db_Project instanceof mysqli)) {
+			return $out;
+		}
+		$qCol = @mysqli_query($db_Project, "SHOW COLUMNS FROM pre_project LIKE 'notify_approved_budget'");
+		if ($qCol && mysqli_num_rows($qCol) > 0) {
+			$q = @mysqli_query($db_Project, "SELECT notify_approved_budget FROM pre_project WHERE id='" . $projectId . "' LIMIT 1");
+			$r = $q ? mysqli_fetch_assoc($q) : null;
+			if ($r && $r['notify_approved_budget'] !== null && $r['notify_approved_budget'] !== '') {
+				$out['approved'] = round((float)$r['notify_approved_budget'], 2);
+			}
+		}
+		$qe = @mysqli_query(
+			$db_Project,
+			"SELECT IFNULL(SUM(total),0) AS t FROM project_activity_budget WHERE code_pre_project='" . $projectId . "' AND status!='99'"
+		);
+		$re = $qe ? mysqli_fetch_assoc($qe) : null;
+		$out['expense'] = round((float)($re['t'] ?? 0), 2);
+		return $out;
+	}
+}
+
+if (!function_exists('pm_budget_source_sum_error')) {
+	function pm_budget_source_sum_error(float $sum, array $caps): string
+	{
+		$sumC = (int)round($sum * 100);
+		$fmt = static function ($n) {
+			return number_format((float)$n, 2, '.', ',');
+		};
+		if (array_key_exists('approved', $caps) && $caps['approved'] !== null) {
+			$capC = (int)round(((float)$caps['approved']) * 100);
+			if ($sumC > $capC) {
+				return 'ผลรวมทุกแหล่ง ' . $fmt($sum) . ' บาท มากกว่างบที่อนุมัติ ' . $fmt($caps['approved']) . ' บาท';
+			}
+		}
+		$expense = round((float)($caps['expense'] ?? 0), 2);
+		if ($sumC > (int)round($expense * 100)) {
+			return 'ผลรวมทุกแหล่ง ' . $fmt($sum) . ' บาท มากกว่ายอดรายละเอียดค่าใช้จ่าย ' . $fmt($expense) . ' บาท';
+		}
+		return '';
+	}
+}
+
+if (!function_exists('pm_joined_budget_source_label')) {
+	/** คืนข้อความหลายแหล่งเมื่อมีมากกว่า 1 แหล่ง หรือมีการระบุจำนวนเงิน ไม่เช่นนั้นคืน null เพื่อใช้ข้อความเดิม */
+	function pm_joined_budget_source_label($db_Project, int $projectId): ?string
+	{
+		$rows = function_exists('pm_project_budget_source_rows')
+			? pm_project_budget_source_rows($db_Project, $projectId)
+			: [];
+		if (count($rows) === 0) {
+			return null;
+		}
+		$hasAmount = false;
+		foreach ($rows as $row) {
+			if ($row['amount'] !== null) {
+				$hasAmount = true;
+				break;
+			}
+		}
+		if (count($rows) < 2 && !$hasAmount) {
+			return null;
+		}
+		$parts = [];
+		foreach ($rows as $row) {
+			$bit = (string)$row['label'];
+			if ($row['amount'] !== null) {
+				$bit .= ' ' . number_format((float)$row['amount'], 2, '.', ',') . ' บาท';
+			}
+			$parts[] = $bit;
+		}
+		$joined = trim(implode(' / ', $parts));
+		return $joined !== '' ? $joined : null;
+	}
+}
+
 /**
  * ข้อความแสดง "แหล่งงบประมาณ" ให้สอดคล้องกับหน้า project_manage
  * (pre_project + project_budget + กิจกรรมงบ + รองรับแถว project_budget ที่ status ไม่ตรงกับที่คาด)
@@ -4968,6 +5160,12 @@ function resolveProjectBudgetSourceForDisplay_core($db_Project, $project_id)
 	$project_id = (int)$project_id;
 	if ($project_id <= 0) {
 		return '-';
+	}
+	if (function_exists('pm_joined_budget_source_label')) {
+		$joined = pm_joined_budget_source_label($db_Project, $project_id);
+		if ($joined !== null && $joined !== '') {
+			return $joined;
+		}
 	}
 	// mysqli ในโหมด strict อาจโยน mysqli_sql_exception เมื่อคอลัมน์/SQL ไม่ตรง — ห้ามให้ลามไปถูก catch ข้างนอกแล้วได้แต่ '-'
 	$mq = static function ($mysqli, $sql) {
@@ -5687,7 +5885,27 @@ if (!function_exists('pm_pbm_bridge_secret')) {
 		if (defined('PBM_BRIDGE_SECRET') && trim((string)PBM_BRIDGE_SECRET) !== '') {
 			return trim((string)PBM_BRIDGE_SECRET);
 		}
-		return pm_dotenv_get('PBM_BRIDGE_SECRET');
+        $secret = trim(pm_dotenv_get('PBM_BRIDGE_SECRET'));
+        if ($secret !== '') {
+            return $secret;
+        }
+        // Withdraw is a sibling application, outside the ancestor .env search paths.
+        $withdrawEnv = dirname(__DIR__, 2) . '/withdraw/.env';
+        $lines = @file($withdrawEnv, FILE_IGNORE_NEW_LINES);
+        foreach (is_array($lines) ? $lines : [] as $line) {
+            if (preg_match('/^\s*PBM_BRIDGE_SECRET\s*=\s*(.*?)\s*$/', $line, $matches) !== 1) {
+                continue;
+            }
+            $value = trim($matches[1]);
+            if (strlen($value) >= 2 && (($value[0] === '"' && substr($value, -1) === '"')
+                || ($value[0] === "'" && substr($value, -1) === "'"))) {
+                $value = substr($value, 1, -1);
+            }
+
+            return trim($value);
+        }
+
+        return '';
 	}
 }
 
