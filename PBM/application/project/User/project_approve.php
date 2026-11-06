@@ -945,7 +945,12 @@ if ($pm_appr_route_op === 'get_request_detail') {
 		'admin_fix_sent_at' => $admin_fix_sent_at,
 		'all_returned_confirmed' => $all_returned_confirmed,
 		'plan_unit_review' => [
-			'show' => !empty($allSortOrders),
+			// แสดงเฉพาะเมื่อถึงขั้นหน่วยแผนแล้ว หรือมีผล/ต้องตอบกลับ — ไม่โชว์ตอนผู้ตรวจสอบกำลังพิจารณา
+			'show' => !empty($allSortOrders) && (
+				!empty($all_certifiers_approved)
+				|| $plan_unit_decision !== ''
+				|| !empty($can_reply_plan_unit)
+			),
 			'all_certifiers_approved' => $all_certifiers_approved,
 			'can_act' => $can_decide_plan_unit,
 			'can_accept' => $can_accept_plan_unit,
@@ -4180,23 +4185,26 @@ if ($op !== '') {
 					);
 				}
 			}
+			// โครงการที่ติ๊กให้แก้ไข — สถานะ 8 ให้ผู้มีชื่อในโครงการแก้ได้
 			@mysqli_query(
 				$db_Project,
 				"UPDATE pre_project
 				SET status_project='8', dates=NOW()
 				WHERE status='1'
-				  AND status_project IN ('3','4','8')
+				  AND status_project IN ('2','3','4','8')
 				  AND id IN ($rejCsv)"
 			);
-			// โครงการที่ไม่ถูกเลือก — คงสถานะรอบรรจุ (3) ถ้าเคยเป็น 8 จากรอบก่อน
+			// โครงการอื่นในคำขอเดียวกัน — คืน admin หน่วย (A1 รอส่งตรวจสอบ)
 			$keepIds = array_diff($allowedIds, $rejIds);
 			if (!empty($keepIds)) {
 				$keepCsv = implode(',', array_map('intval', array_values($keepIds)));
 				@mysqli_query(
 					$db_Project,
 					"UPDATE pre_project
-					 SET status_project='3', dates=NOW()
-					 WHERE status='1' AND status_project='8' AND id IN ($keepCsv)"
+					 SET status_project='2', dates=NOW()
+					 WHERE status='1'
+					   AND status_project IN ('2','3','4','8')
+					   AND id IN ($keepCsv)"
 				);
 			}
 
@@ -9963,7 +9971,8 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 					rejectCount++;
 				}
 			});
-			if (okCount > 0) {
+			// Show the full approver chain while the first decision is still pending.
+			if (operateApprovers.length > 0) {
 				var totalAppr = operateApprovers.length;
 				var bannerCls = 'md-appr-banner';
 				var bannerTitle = '';
@@ -10594,7 +10603,6 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 	function buildIncludeReturnPickerHtml(){
 		try { rememberIncludeProjectIds(lastDetailResp); } catch (_eRemPick) {}
 		var plist = collectIncludeReturnProjects();
-		var sharedNote = String($('#mdCertNote').val() || '').trim();
 		var html = '<div class="cf-return-wrap text-left mt-2">';
 		html += '<div class="font-weight-bold mb-2">ตีกลับโครงการ</div>';
 		if (!plist.length) {
@@ -10611,12 +10619,13 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 			var label = (idx + 1) + '. ' + String(p.name || ('โครงการ #' + pid));
 			html += '<tr data-project-id="' + pid + '">';
 			html += '<td class="text-left">' + $('<div/>').text(label).html() + '</td>';
-			html += '<td><textarea class="form-control form-control-sm cf-return-note" data-project-id="' + pid + '" rows="2" placeholder="ระบุเหตุผลตีกลับโครงการนี้">' + $('<div/>').text(sharedNote).html() + '</textarea></td>';
+			// กรอกใน popup เท่านั้น — ไม่ดึงจากช่องด้านล่าง
+			html += '<td><textarea class="form-control form-control-sm cf-return-note" data-project-id="' + pid + '" rows="2" placeholder="ระบุเหตุผลตีกลับโครงการนี้"></textarea></td>';
 			html += '<td class="text-center"><input type="checkbox" class="cf-return-project" value="' + pid + '" checked></td>';
 			html += '</tr>';
 		});
 		html += '</tbody></table></div>';
-		html += '<div class="text-muted text-85 mt-1">เลือกโครงการที่ต้องแก้ไขอย่างน้อย 1 รายการ และกรอกข้อเสนอแนะของโครงการที่เลือก</div></div>';
+		html += '<div class="text-muted text-85 mt-1">เลือกโครงการที่ต้องแก้ไขอย่างน้อย 1 รายการ และกรอกข้อเสนอแนะของโครงการที่เลือกในช่องนี้</div></div>';
 		return html;
 	}
 	function collectIncludeReturnPicks(){
@@ -10630,7 +10639,6 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 			var pid = parseInt($(this).val() || '0', 10);
 			if (pid <= 0) return;
 			var rowNote = String($(this).closest('tr').find('.cf-return-note').val() || '').trim();
-			if (!rowNote) rowNote = String($('#mdCertNote').val() || '').trim();
 			if (!rowNote) missingNote = true;
 			picked.push(pid);
 			notes[pid] = rowNote;
@@ -10642,6 +10650,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		// guard: ตีกลับต้องมีข้อความ / เลือกโครงการ
 		if (confirmMode === 'back') {
 			var flowType = String($('#mdCertFlowType').val() || 'include');
+			var includePickerOk = false;
 			if (flowType === 'include' && ($('#cfReturnProjectList').length || !confirmUsePlanNote)) {
 				var pack = collectIncludeReturnPicks();
 				if ($('#cfReturnProjectList').length) {
@@ -10659,36 +10668,37 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 					}
 					window.__pmReturnProjectIds = pack.picked;
 					window.__pmReturnProjectNotes = pack.notes;
-					if (!String($('#mdCertNote').val() || '').trim()) {
-						var firstNote = '';
-						pack.picked.forEach(function(id){
-							if (!firstNote && pack.notes[id]) firstNote = pack.notes[id];
-						});
-						if (firstNote) $('#mdCertNote').val(firstNote);
-					}
+					includePickerOk = true;
+					var firstNote = '';
+					pack.picked.forEach(function(id){
+						if (!firstNote && pack.notes[id]) firstNote = pack.notes[id];
+					});
+					if (firstNote) $('#mdCertNote').val(firstNote);
 				} else {
 					var autoIds = [];
 					var autoNotes = {};
-					var sharedNoteOk = String($('#mdCertNote').val() || '').trim();
 					collectIncludeReturnProjects().forEach(function(p){
 						var pid = parseInt(p.project_id || 0, 10);
 						if (pid > 0 && autoIds.indexOf(pid) === -1) {
 							autoIds.push(pid);
-							autoNotes[pid] = sharedNoteOk;
+							autoNotes[pid] = '';
 						}
 					});
 					window.__pmReturnProjectIds = autoIds;
 					window.__pmReturnProjectNotes = autoNotes;
 				}
 			}
-			var n = confirmUsePlanNote
-				? String($('#mdPlanUnitNote').val() || '').trim()
-				: String($('#mdCertNote').val() || '').trim();
-			if (!n) {
-				showAjaxMsg('err', 'กรุณากรอกข้อเสนอแนะ/ข้อชี้แจงก่อนตีกลับ');
-				$('#cfBody').find('.cf-guard-msg').remove();
-				$('#cfBody').append('<div class="cf-guard-msg text-danger mt-2">กรุณากรอกข้อเสนอแนะ/ข้อชี้แจงก่อนตีกลับ</div>');
-				return;
+			// include + เลือกใน popup แล้ว: ไม่บังคับช่องด้านล่าง
+			if (!(includePickerOk && flowType === 'include' && !confirmUsePlanNote)) {
+				var n = confirmUsePlanNote
+					? String($('#mdPlanUnitNote').val() || '').trim()
+					: String($('#mdCertNote').val() || '').trim();
+				if (!n) {
+					showAjaxMsg('err', 'กรุณากรอกข้อเสนอแนะ/ข้อชี้แจงก่อนตีกลับ');
+					$('#cfBody').find('.cf-guard-msg').remove();
+					$('#cfBody').append('<div class="cf-guard-msg text-danger mt-2">กรุณากรอกข้อเสนอแนะ/ข้อชี้แจงก่อนตีกลับ</div>');
+					return;
+				}
 			}
 		}
 		hideConfirmModalSafe();
@@ -10921,6 +10931,19 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		}
 		var n = String($('#mdCertNote').val() || '').trim();
 		$('#cfOkBtn').prop('disabled', !n);
+	});
+	// ตีกลับคำขอพิจารณาแผน: กรอกใน popup — ปุ่มยืนยันเปิดไว้ ตรวจตอนกด
+	$(document).on('input', '.cf-return-note', function(){
+		if (confirmMode !== 'back' || confirmUsePlanNote) return;
+		if ($('#cfReturnProjectList').length) {
+			$('#cfOkBtn').prop('disabled', false);
+		}
+	});
+	$(document).on('change', '.cf-return-project', function(){
+		if (confirmMode !== 'back' || confirmUsePlanNote) return;
+		if ($('#cfReturnProjectList').length) {
+			$('#cfOkBtn').prop('disabled', false);
+		}
 	});
 	$(document).on('input', '#mdPlanUnitNote', function(){
 		if (confirmMode !== 'back' || !confirmUsePlanNote) return;

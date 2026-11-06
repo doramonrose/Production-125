@@ -309,6 +309,10 @@ if ($row = mysqli_fetch_array($result)) {
 			include __DIR__ . '/project_manage.php';
 			exit;
 		}
+		if ($op === 'recall_submit_draft_ajax' || $op === 'recall_include_send_ajax') {
+			include __DIR__ . '/project_manage.php';
+			exit;
+		}
 		if ($op === 'delete_draft_project_ajax') {
 			include __DIR__ . '/project_manage.php';
 			exit;
