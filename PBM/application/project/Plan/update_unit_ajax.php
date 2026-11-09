@@ -30,6 +30,10 @@ try {
 	$unit_name = trim((string)($_POST['unit_name'] ?? ''));
 	$paper_name = trim((string)($_POST['paper_name'] ?? ''));
 	$paper_start = trim((string)($_POST['paper_start'] ?? ''));
+	$org_unit_code = trim((string)($_POST['org_unit_code'] ?? $_POST['central_unit_code'] ?? ''));
+	if (strlen($org_unit_code) > 20) {
+		$org_unit_code = substr($org_unit_code, 0, 20);
+	}
 	$has_code_job = array_key_exists('code_job', $_POST);
 	$has_code_department = array_key_exists('code_department', $_POST);
 	$code_job = $has_code_job ? (int)$_POST['code_job'] : 0;
@@ -40,6 +44,9 @@ try {
 	}
 	if ($unit_name === '') {
 		json_fail('กรุณากรอกชื่อหน่วยงาน');
+	}
+	if ($org_unit_code === '') {
+		json_fail('กรุณาเลือกหน่วยงานส่วนกลางสำหรับใช้เลขที่บันทึกข้อความ (unit_code)');
 	}
 
 	$columns = [];
@@ -56,6 +63,9 @@ try {
 
 	$sets = [];
 	$sets[] = "name='" . mysqli_real_escape_string($db_Project, $unit_name) . "'";
+	if (isset($columns['unit_code'])) {
+		$sets[] = "unit_code='" . mysqli_real_escape_string($db_Project, $org_unit_code) . "'";
+	}
 	if (isset($columns['paper_name'])) {
 		$sets[] = "paper_name='" . mysqli_real_escape_string($db_Project, $paper_name) . "'";
 	}

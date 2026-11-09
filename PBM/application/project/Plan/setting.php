@@ -2617,6 +2617,22 @@ if ($op === '' && isset($_GET['cp'])) {
 		$unit_rows = getSetUnitListForPlan($db_Project);
 		$job_rows = getSetJobListForPlan($db_Project);
 		$personnel_all = getSetPersonnelList($db_Project, '');
+		// คำนำหน้าเลขที่จาก API ส่วนกลาง (ฟิลด์ document_number เช่น MHESI 8393(9).1.1.1/)
+		$pmOrgDocPrefixByCode = [];
+		try {
+			require_once __DIR__ . '/../fn/document_number_client.php';
+			if (function_exists('pm_document_number_list_org_options')) {
+				foreach (pm_document_number_list_org_options() as $__opt) {
+					$__c = trim((string)($__opt['code'] ?? ''));
+					$__d = trim((string)($__opt['document_number'] ?? ''));
+					if ($__c !== '' && $__d !== '' && !isset($pmOrgDocPrefixByCode[$__c])) {
+						$pmOrgDocPrefixByCode[$__c] = $__d;
+					}
+				}
+			}
+		} catch (Throwable $__eOrgDoc) {
+			$pmOrgDocPrefixByCode = [];
+		}
 		if (!function_exists('staffMainUnitDisplayName')) {
 			include_once(__DIR__ . '/../fn/main_staff.php');
 		}
@@ -2990,9 +3006,11 @@ if ($op === '' && isset($_GET['cp'])) {
 				$secTitle = trim((string)($uu['name'] ?? ''));
 			}
 			$unitCode = trim((string)($uu['code'] ?? ''));
+			$orgUnitCode = trim((string)($uu['unit_code'] ?? ''));
 			$sections[] = [
 				'uid' => $secUid,
 				'unit_code' => $unitCode,
+				'org_unit_code' => $orgUnitCode,
 				'title' => $secTitle !== '' ? $secTitle : ('หน่วยงาน #' . $secUid),
 				'rows' => $buildRowsForGroup2($secUid),
 				'group_label' => 'หน่วยงาน',
@@ -3006,6 +3024,7 @@ if ($op === '' && isset($_GET['cp'])) {
 				'manage_name' => trim((string)($uu['name'] ?? '')),
 				'manage_paper_name' => trim((string)($uu['paper_name'] ?? '')),
 				'manage_paper_start' => trim((string)($uu['paper_start'] ?? '')),
+				'manage_org_unit_code' => $orgUnitCode,
 				'manage_code_job' => (int)($uu['code_job'] ?? 0),
 				'manage_code_department' => (int)($uu['code_department'] ?? 0),
 				'manage_status' => (int)($uu['status'] ?? 1),
@@ -3236,6 +3255,7 @@ if ($op === '' && isset($_GET['cp'])) {
 															$uRowHead = $unit_map[(int)($sec['uid'] ?? 0)] ?? [];
 															$uPaperNameHead = trim((string)($uRowHead['paper_name'] ?? ''));
 															$uPaperStartHead = trim((string)($uRowHead['paper_start'] ?? ''));
+															$uOrgCodeHead = trim((string)($uRowHead['unit_code'] ?? $sec['org_unit_code'] ?? $sec['manage_org_unit_code'] ?? ''));
 															if ($uPaperNameHead === '') {
 																$uPaperNameHead = trim((string)($sec['manage_paper_name'] ?? ''));
 															}
@@ -3244,7 +3264,19 @@ if ($op === '' && isset($_GET['cp'])) {
 															}
 															$uPaperNameHead = trim($uPaperNameHead, " \t\n\r\0\x0B/");
 															$uPaperStartHead = trim($uPaperStartHead, " \t\n\r\0\x0B/");
-															$uPaperBadge = trim($uPaperNameHead . ($uPaperStartHead !== '' ? '/' . $uPaperStartHead : ''), '/');
+															// Badge = คำนำหน้าจากฟิลด์ document_number ส่วนกลาง (MHESI…) เมื่อผูก unit_code แล้ว
+															// ไม่โชว์เลขรันเอกสาร และไม่ต่อ ผ001 แบบเดิม
+															$uPaperBadge = '';
+															if ($uOrgCodeHead !== '' && !empty($pmOrgDocPrefixByCode[$uOrgCodeHead])) {
+																$uPaperBadge = rtrim((string)$pmOrgDocPrefixByCode[$uOrgCodeHead], " \t/");
+															} elseif ($uPaperNameHead !== '' && stripos($uPaperNameHead, 'MHESI') === 0) {
+																$uPaperBadge = rtrim($uPaperNameHead, " \t/");
+															} elseif ($uOrgCodeHead !== '') {
+																$uPaperBadge = $uOrgCodeHead;
+															} elseif ($uPaperNameHead !== '') {
+																// ยังไม่ผูกส่วนกลาง — แสดงคำนำหน้าท้องถิ่นชั่วคราว (ไม่ต่อ paper_start)
+																$uPaperBadge = rtrim($uPaperNameHead, " \t/");
+															}
 															$uTitleText = (string)($sec['title'] ?? '');
 															if (function_exists('planStripUnitCodeFromLabel')) {
 																$uTitleText = planStripUnitCodeFromLabel($uTitleText);
@@ -3287,6 +3319,7 @@ if ($op === '' && isset($_GET['cp'])) {
 															$uName = trim((string)($sec['manage_name'] ?? ''));
 															$uPaperName = trim((string)($sec['manage_paper_name'] ?? ''));
 															$uPaperStart = trim((string)($sec['manage_paper_start'] ?? ''));
+															$uOrgUnitCode = trim((string)($sec['manage_org_unit_code'] ?? $sec['org_unit_code'] ?? ''));
 															$uCodeJob = (int)($sec['manage_code_job'] ?? 0);
 															$uCodeDepartment = (int)($sec['manage_code_department'] ?? 0);
 															$uStatus = (int)($sec['manage_status'] ?? 0);
@@ -3311,6 +3344,7 @@ if ($op === '' && isset($_GET['cp'])) {
 																data-unit-name="<?= htmlspecialchars($uName, ENT_QUOTES, 'UTF-8'); ?>"
 																data-paper-name="<?= htmlspecialchars($uPaperName, ENT_QUOTES, 'UTF-8'); ?>"
 																data-paper-start="<?= htmlspecialchars($uPaperStart, ENT_QUOTES, 'UTF-8'); ?>"
+																data-org-unit-code="<?= htmlspecialchars($uOrgUnitCode, ENT_QUOTES, 'UTF-8'); ?>"
 																data-code-job="<?= $uCodeJob; ?>"
 																data-code-department="<?= $uCodeDepartment; ?>"
 																<?= $canEditMeta ? '' : 'disabled'; ?>>
@@ -3640,11 +3674,21 @@ if ($op === '' && isset($_GET['cp'])) {
 																<td class="text-dark-m3"><input type="text" class="form-control col-sm-12 col-md-12" id="edit_unit_name" name="unit_name" required /></td>
 															</tr>
 															<tr>
-																<td><i class="fas fa-file-alt text-blue"></i></td>
-																<td class="text-95 text-600 text-secondary-d2">เลขที่บันทึกข้อความ</td>
-																<td class="text-dark-m3"><input type="text" class="form-control col-sm-12 col-md-12" id="edit_paper_name" name="paper_name" /></td>
+																<td><i class="fas fa-link text-blue"></i></td>
+																<td class="text-95 text-600 text-secondary-d2">ใช้เลขที่ภายใต้ส่วนงาน<br><span class="text-80 text-muted">(unit_code ส่วนกลาง)</span></td>
+																<td class="text-dark-m3">
+																	<select class="form-control col-sm-12 col-md-12 pm-org-unit-select" id="edit_org_unit_code" name="org_unit_code" required>
+																		<option value="">— เลือกหน่วยงานส่วนกลาง —</option>
+																	</select>
+																	<div class="text-muted text-80 mt-1">เลขรันต่อจากทะเบียนกลางของส่วนงานที่เลือก</div>
+																</td>
 															</tr>
 															<tr>
+																<td><i class="fas fa-file-alt text-blue"></i></td>
+																<td class="text-95 text-600 text-secondary-d2">คำนำหน้าเลขที่ (แสดงผล)</td>
+																<td class="text-dark-m3"><input type="text" class="form-control col-sm-12 col-md-12" id="edit_paper_name" name="paper_name" readonly /></td>
+															</tr>
+															<tr class="d-none">
 																<td><i class="fas fa-hashtag text-blue"></i></td>
 																<td class="text-95 text-600 text-secondary-d2">รหัสเริ่มต้น</td>
 																<td class="text-dark-m3"><input type="text" class="form-control col-sm-12 col-md-12" id="edit_paper_start" name="paper_start" /></td>
@@ -3798,16 +3842,30 @@ if ($op === '' && isset($_GET['cp'])) {
 																</tr>
 																<tr>
 																	<td>
-																		<i class="fas fa-file-alt text-blue"></i>
+																		<i class="fas fa-link text-blue"></i>
 																	</td>
 																	<td class="text-95 text-600 text-secondary-d2">
-																		เลขที่บันทึกข้อความ
+																		ใช้เลขที่ภายใต้ส่วนงาน<br><span class="text-80 text-muted">(unit_code ส่วนกลาง)</span>
 																	</td>
 																	<td class="text-dark-m3">
-																		<input type="text" class="form-control col-sm-12 col-md-12" id="paper_name" name="paper_name" />
+																		<select class="form-control col-sm-12 col-md-12 pm-org-unit-select" id="org_unit_code" name="org_unit_code" required>
+																			<option value="">— เลือกหน่วยงานส่วนกลาง —</option>
+																		</select>
+																		<div class="text-muted text-80 mt-1">หน่วยงานใหม่เลือกส่วนงานที่ต้องการรันเลขต่อจากทะเบียนกลาง</div>
 																	</td>
 																</tr>
 																<tr>
+																	<td>
+																		<i class="fas fa-file-alt text-blue"></i>
+																	</td>
+																	<td class="text-95 text-600 text-secondary-d2">
+																		คำนำหน้าเลขที่ (แสดงผล)
+																	</td>
+																	<td class="text-dark-m3">
+																		<input type="text" class="form-control col-sm-12 col-md-12" id="paper_name" name="paper_name" readonly />
+																	</td>
+																</tr>
+																<tr class="d-none">
 																	<td>
 																		<i class="fas fa-hashtag text-blue"></i>
 																	</td>
@@ -4465,6 +4523,85 @@ if ($op === '' && isset($_GET['cp'])) {
 		})();
 	</script>
 	<script>
+		// โหลดรายการหน่วยงานส่วนกลาง (unit_code) สำหรับเลือกเลขที่บันทึกข้อความ
+		(function() {
+			window.__pmOrgUnitOptions = window.__pmOrgUnitOptions || null;
+			window.__pmOrgUnitOptionsPromise = null;
+
+			function fillOrgUnitSelect(sel, selectedCode) {
+				if (!sel) return;
+				const opts = window.__pmOrgUnitOptions || [];
+				const cur = String(selectedCode || sel.value || '').trim();
+				const keepFirst = sel.querySelector('option[value=""]');
+				sel.innerHTML = '';
+				const ph = document.createElement('option');
+				ph.value = '';
+				ph.textContent = '— เลือกหน่วยงานส่วนกลาง —';
+				sel.appendChild(ph);
+				opts.forEach(function(o) {
+					const op = document.createElement('option');
+					op.value = String(o.code || '');
+					const doc = String(o.document_number || '').trim();
+					op.textContent = String(o.label || o.code || '') + (doc ? (' · ' + doc) : '');
+					op.setAttribute('data-document-number', doc);
+					if (op.value && op.value === cur) op.selected = true;
+					sel.appendChild(op);
+				});
+				if (cur && !sel.value) {
+					const op = document.createElement('option');
+					op.value = cur;
+					op.textContent = cur + ' (ค่าเดิม)';
+					op.selected = true;
+					sel.appendChild(op);
+				}
+			}
+
+			window.pmLoadOrgUnitOptions = function(force) {
+				if (!force && Array.isArray(window.__pmOrgUnitOptions)) {
+					return Promise.resolve(window.__pmOrgUnitOptions);
+				}
+				if (!force && window.__pmOrgUnitOptionsPromise) {
+					return window.__pmOrgUnitOptionsPromise;
+				}
+				window.__pmOrgUnitOptionsPromise = fetch('list_document_units_ajax.php', { credentials: 'same-origin' })
+					.then(function(r) { return r.json(); })
+					.then(function(data) {
+						window.__pmOrgUnitOptions = (data && data.ok && Array.isArray(data.options)) ? data.options : [];
+						document.querySelectorAll('.pm-org-unit-select').forEach(function(sel) {
+							fillOrgUnitSelect(sel, sel.getAttribute('data-selected') || sel.value || '');
+						});
+						return window.__pmOrgUnitOptions;
+					})
+					.catch(function() {
+						window.__pmOrgUnitOptions = [];
+						return [];
+					});
+				return window.__pmOrgUnitOptionsPromise;
+			};
+
+			function syncPaperFromOrgSelect(sel) {
+				if (!sel) return;
+				const opt = sel.options[sel.selectedIndex];
+				const doc = opt ? (opt.getAttribute('data-document-number') || '') : '';
+				const form = sel.closest('form');
+				if (!form) return;
+				const paper = form.querySelector('input[name="paper_name"]');
+				if (paper && doc) paper.value = doc;
+			}
+
+			document.addEventListener('change', function(ev) {
+				const sel = ev.target && ev.target.closest ? ev.target.closest('.pm-org-unit-select') : null;
+				if (!sel) return;
+				syncPaperFromOrgSelect(sel);
+			});
+
+			document.addEventListener('DOMContentLoaded', function() {
+				window.pmLoadOrgUnitOptions(false);
+			});
+			window.pmLoadOrgUnitOptions(false);
+		})();
+	</script>
+	<script>
 		// แก้ไขหน่วยงาน (ไม่แก้รายชื่อบุคลากร) แบบ AJAX
 		(function() {
 			function qs(sel, root) { return (root || document).querySelector(sel); }
@@ -4478,6 +4615,7 @@ if ($op === '' && isset($_GET['cp'])) {
 				const unitName = btn.getAttribute('data-unit-name') || '';
 				const paperName = btn.getAttribute('data-paper-name') || '';
 				const paperStart = btn.getAttribute('data-paper-start') || '';
+				const orgUnitCode = btn.getAttribute('data-org-unit-code') || '';
 
 				const hid = qs('#edit_unit_id');
 				const hkind = qs('#edit_manage_kind');
@@ -4485,6 +4623,7 @@ if ($op === '' && isset($_GET['cp'])) {
 				const inpUnitName = qs('#edit_unit_name');
 				const inpPaperName = qs('#edit_paper_name');
 				const inpPaperStart = qs('#edit_paper_start');
+				const selOrg = qs('#edit_org_unit_code');
 
 				if (hid) hid.value = uid;
 				if (hkind) hkind.value = manageKind;
@@ -4492,6 +4631,27 @@ if ($op === '' && isset($_GET['cp'])) {
 				if (inpUnitName) inpUnitName.value = unitName;
 				if (inpPaperName) inpPaperName.value = paperName;
 				if (inpPaperStart) inpPaperStart.value = paperStart;
+				if (selOrg) {
+					selOrg.setAttribute('data-selected', orgUnitCode);
+					const apply = function() {
+						if (typeof window.pmLoadOrgUnitOptions === 'function') {
+							window.pmLoadOrgUnitOptions(false).then(function() {
+								const opts = selOrg.options;
+								for (let i = 0; i < opts.length; i++) {
+									opts[i].selected = (opts[i].value === orgUnitCode);
+								}
+								if (orgUnitCode && selOrg.value !== orgUnitCode) {
+									const op = document.createElement('option');
+									op.value = orgUnitCode;
+									op.textContent = orgUnitCode + ' (ค่าเดิม)';
+									op.selected = true;
+									selOrg.appendChild(op);
+								}
+							});
+						}
+					};
+					apply();
+				}
 			});
 
 			document.addEventListener('submit', async function(ev) {

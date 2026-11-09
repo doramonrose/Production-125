@@ -6913,18 +6913,42 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		margin-bottom: .75rem;
 		position: relative;
 	}
-	#modalRequestDetail .md-plan-unit-head-badges{
-		position: absolute;
-		top: .85rem;
-		right: .95rem;
+	#modalRequestDetail .md-plan-unit-done{
+		padding: .9rem 1rem .85rem;
+		border-radius: 12px;
+		background: linear-gradient(145deg, #eef2ff 0%, #ede9fe 45%, #f5f3ff 100%);
+		border: 1px solid #a5b4fc;
+		box-shadow: 0 6px 20px -8px rgba(67, 56, 202, 0.35);
+		margin-bottom: .75rem;
+	}
+	#modalRequestDetail .md-plan-unit-done-row{
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: .65rem 1rem;
+	}
+	#modalRequestDetail .md-plan-unit-done-left{ min-width: 0; flex: 1 1 220px; }
+	#modalRequestDetail .md-plan-unit-done-name{
+		font-size: 1.05rem;
+		font-weight: 950;
+		color: #1e1b4b;
+		line-height: 1.35;
+	}
+	#modalRequestDetail .md-plan-unit-done-pos{
+		margin-top: .15rem;
+		font-size: .92rem;
+		font-weight: 750;
+		color: #4c1d95;
+	}
+	#modalRequestDetail .md-plan-unit-done-right{
 		display: flex;
 		flex-wrap: wrap;
 		gap: .4rem .45rem;
 		align-items: center;
 		justify-content: flex-end;
-		text-align: right;
 	}
-	#modalRequestDetail .md-plan-unit-head-badges .md-plan-unit-chip{
+	#modalRequestDetail .md-plan-unit-done-right .md-plan-unit-chip{
 		background: rgba(255,255,255,.85);
 	}
 	#modalRequestDetail .md-plan-unit-section-title{
@@ -8214,14 +8238,23 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 							<ol class="md-seq-list" id="mdSeqList"></ol>
 							</div>
 							<div class="md-plan-unit-wrap" id="mdPlanUnitWrap" style="display:none;">
-								<div class="md-plan-unit-head">
-									<div class="md-plan-unit-section-title">การพิจารณาจากหน่วยแผนและงบประมาณ</div>
+								<div class="md-plan-unit-head" id="mdPlanUnitHeadPending">
+									<div class="md-plan-unit-section-title">การพิจารณา</div>
 									<div class="d-flex flex-wrap align-items-baseline justify-content-between gap-2">
 										<span class="md-plan-unit-title">หน่วยแผนและงบประมาณ</span>
 										<span class="md-seq-warn" id="mdPlanUnitStatusLine" style="display:none;">รอตรวจสอบ!</span>
 									</div>
-									<div id="mdPlanUnitHeadBadges" class="md-plan-unit-head-badges" style="display:none;"></div>
 									<div class="md-plan-unit-officer-line" id="mdPlanUnitOfficerLine"></div>
+								</div>
+								<div class="md-plan-unit-done" id="mdPlanUnitHeadDone" style="display:none;">
+									<div class="md-plan-unit-section-title">การพิจารณา</div>
+									<div class="md-plan-unit-done-row">
+										<div class="md-plan-unit-done-left">
+											<div class="md-plan-unit-done-name" id="mdPlanUnitDoneName">-</div>
+											<div class="md-plan-unit-done-pos">หน่วยแผนและงบประมาณ</div>
+										</div>
+										<div class="md-plan-unit-done-right" id="mdPlanUnitDoneBadges"></div>
+									</div>
 								</div>
 								<div id="mdPlanUnitResult" style="display:none;">
 									<div class="md-seq-note-line mb-0" id="mdPlanUnitResultInner"></div>
@@ -10238,7 +10271,8 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		try { $('#mdPlanUnitReplyWrap').hide(); $('#mdPlanUnitReplyMsg').hide().text('').removeClass('alert-danger alert-success'); } catch(_epur0) {}
 		try { $('#mdPlanUnitReply').val(''); } catch(_epur1) {}
 		try { $('#mdPlanUnitTimelineWrap').hide(); $('#mdPlanUnitTimeline').empty(); } catch(_eputl0) {}
-		try { $('#mdPlanUnitHeadBadges').hide().empty(); } catch(_ephb0) {}
+		try { $('#mdPlanUnitHeadDone').hide(); $('#mdPlanUnitDoneBadges').empty(); } catch(_ephd0) {}
+		try { $('#mdPlanUnitHeadPending').show(); } catch(_ephp0) {}
 		var officer = String(pu.officer_name || '').trim();
 		if (officer) {
 			$('#mdPlanUnitOfficerLine').html(
@@ -10302,25 +10336,24 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 
 		if (dec) {
 			$('#mdPlanUnitActBlock').hide();
-			var label = dec === 'included' ? 'นำเข้าที่ประชุมแล้ว' : (dec === 'returned' ? 'ตีกลับเพื่อแก้ไข' : 'ไม่อนุมัติ');
+			// รูปแบบเดียวกับกรอบผู้ตรวจสอบด้านบน: หัวข้อ / ชื่อผู้ดำเนินการ / หน่วยงาน / สถานะ+วันที่
+			var label = dec === 'included' ? 'นำเข้าที่ประชุม' : (dec === 'returned' ? 'ตีกลับเพื่อแก้ไข' : 'ไม่อนุมัติ');
 			var icon = dec === 'included' ? 'fa-check-double' : (dec === 'returned' ? 'fa-undo' : 'fa-ban');
 			var pillCls = dec === 'included' ? 'md-plan-unit-pill-ok' : (dec === 'returned' ? 'md-plan-unit-pill-warn' : 'md-plan-unit-pill-no');
-			var cardCls = dec === 'included' ? 'md-plan-unit-result-ok' : (dec === 'returned' ? 'md-plan-unit-result-warn' : 'md-plan-unit-result-no');
-			var note = String(pu.note || '');
 			var at = pu.decided_at ? fmtThaiDateTime(pu.decided_at) : '-';
-			var who = String(pu.decider_name || '-');
-			// แสดงป้าย/วันที่/โดย ที่มุมขวาบนของหัวข้อ (ตัดของเดิมในกรอบด้านล่างออก)
+			var who = String(pu.decider_name || pu.officer_name || '-').trim();
+			if (who === '' || who === '-') who = String(pu.officer_name || '-').trim();
+			$('#mdPlanUnitHeadPending').hide();
+			$('#mdPlanUnitDoneName').text(who !== '' ? who : '-');
 			var hb = ''
 				+ '<span class="md-plan-unit-pill ' + pillCls + '"><i class="fa ' + icon + '"></i>' + $('<div/>').text(label).html() + '</span>'
-				+ '<span class="md-plan-unit-chip" title="' + $('<div/>').text(String(pu.decided_at || '')).html() + '"><i class="fa fa-calendar-alt"></i>วันที่: ' + $('<div/>').text(at).html() + '</span>'
-				+ '<span class="md-plan-unit-chip"><i class="fa fa-user"></i>โดย ' + $('<div/>').text(who).html() + '</span>';
-			$('#mdPlanUnitHeadBadges').html(hb).show();
+				+ '<span class="md-plan-unit-chip" title="' + $('<div/>').text(String(pu.decided_at || '')).html() + '"><i class="fa fa-calendar-alt"></i>วันที่: ' + $('<div/>').text(at).html() + '</span>';
+			$('#mdPlanUnitDoneBadges').html(hb);
+			$('#mdPlanUnitHeadDone').show();
 
-			// ไม่แสดงข้อความ note ใต้หัวข้อแล้ว (ให้ดูจากไทม์ไลน์แทน)
 			$('#mdPlanUnitResultInner').empty();
 			$('#mdPlanUnitResult').hide();
 
-			// ผู้ยื่นเสนอ: ถ้าหน่วยแผน "ตีกลับ" ให้แสดงช่องส่งคำชี้แจงกลับไปให้หน่วยแผนได้
 			var canReply = !!pu.can_reply;
 			if (dec === 'returned' && canReply) {
 				var sr = pu.submitter_reply || {};
@@ -10329,6 +10362,8 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 				$('#mdPlanUnitReplyWrap').show();
 			}
 		} else {
+			$('#mdPlanUnitHeadDone').hide();
+			$('#mdPlanUnitHeadPending').show();
 			$('#mdPlanUnitResult').hide();
 			$('#mdPlanUnitResultInner').empty();
 			try { $('#mdPlanUnitDecideActions').hide(); } catch(_epa0) {}
@@ -10761,6 +10796,31 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 			try { showAjaxMsg('err', 'ตรวจสอบปุ่มตีกลับไม่สำเร็จ: ' + m); } catch(ex){ try { window.alert(m); } catch(e2){} }
 		}
 	};
+	// กัน Bootstrap enforceFocus ของ modal รายละเอียด ดึงโฟกัสออกจาก textarea ใน popup ยืนยัน (modal ซ้อน)
+	function pmConfirmFocusGuard(e){
+		var m = document.getElementById('modalConfirmAction');
+		if (!m) return;
+		if (!(m.classList.contains('pm-confirm-manual') || m.classList.contains('show'))) return;
+		if (m === e.target || m.contains(e.target)) {
+			e.stopImmediatePropagation();
+		}
+	}
+	function enableConfirmFocusEscape(){
+		try { document.removeEventListener('focusin', pmConfirmFocusGuard, true); } catch (_eOff) {}
+		try { document.addEventListener('focusin', pmConfirmFocusGuard, true); } catch (_eOn) {}
+		// ปิด trap ของ BS4 jQuery ชั่วคราว แล้วค่อยคืนตอนปิด confirm
+		try { $(document).off('focusin.bs.modal'); } catch (_eBs) {}
+	}
+	function restoreDetailEnforceFocus(){
+		try { document.removeEventListener('focusin', pmConfirmFocusGuard, true); } catch (_eOff2) {}
+		try {
+			var $d = $('#modalRequestDetail');
+			if (!$d.length) return;
+			if (!$d.hasClass('show') && !$d.hasClass('in')) return;
+			var inst = $d.data('bs.modal');
+			if (inst && typeof inst._enforceFocus === 'function') inst._enforceFocus();
+		} catch (_eRest) {}
+	}
 	function showConfirmFallback(){
 		var $m = $('#modalConfirmAction');
 		if (!$m.length) return;
@@ -10769,13 +10829,21 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 			$('body').append('<div class="modal-backdrop fade show confirm-backdrop"></div>');
 		}
 		$('body').addClass('modal-open');
+		enableConfirmFocusEscape();
 		try { $m[0].scrollIntoView({ block: 'center' }); } catch(e){}
+		setTimeout(function(){
+			try {
+				var $note = $m.find('.cf-return-note').filter(':visible').first();
+				if ($note.length) $note.trigger('focus');
+			} catch (_eFocus) {}
+		}, 0);
 	}
 	function hideConfirmFallback(){
 		var $m = $('#modalConfirmAction');
 		if (!$m.length) return;
 		$m.removeClass('show pm-confirm-manual cf-return-wide').css({ display: 'none' }).removeAttr('aria-modal').attr('aria-hidden', 'true');
 		$('.modal-backdrop.confirm-backdrop').remove();
+		restoreDetailEnforceFocus();
 		// ถ้าไม่มี modal รายละเอียด/อื่นค้างอยู่ ค่อยถอด modal-open
 		var detailOpen = $('#modalRequestDetail').hasClass('show') || $('#modalRequestDetail').hasClass('in');
 		if (!detailOpen && !$('.modal.show').length) $('body').removeClass('modal-open');

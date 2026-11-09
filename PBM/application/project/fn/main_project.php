@@ -767,6 +767,11 @@ if (!function_exists('pm_ensure_approve_memo_schema')) {
 			'approve_memo_date' => "VARCHAR(255) NULL",
 			'approve_memo_esign_ref' => "VARCHAR(160) NULL",
 			'approve_memo_esign_at' => "DATETIME NULL DEFAULT NULL",
+			// เลขที่ออกจาก API ส่วนกลาง — ถ้ามีค่าแล้วไม่เรียกออกเลขซ้ำ (เลขเก่าคงเดิม)
+			'approve_memo_doc_no' => "VARCHAR(180) NULL",
+			'approve_memo_doc_issue_id' => "BIGINT NULL DEFAULT NULL",
+			'approve_memo_doc_year_be' => "INT NULL DEFAULT NULL",
+			'approve_memo_doc_unit_code' => "VARCHAR(20) NULL",
 		];
 		foreach ($cols as $col => $def) {
 			$chk = @mysqli_query($db_Project, "SHOW COLUMNS FROM pre_project LIKE '" . mysqli_real_escape_string($db_Project, $col) . "'");
@@ -777,11 +782,148 @@ if (!function_exists('pm_ensure_approve_memo_schema')) {
 	}
 }
 
-if (!function_exists('pm_approve_memo_esign_footer_text')) {
-	function pm_approve_memo_esign_footer_text(string $ref): string
+/**
+ * ดึง unit_code ส่วนกลางของหน่วยงานโครงการ (set_unit.unit_code)
+ */
+if (!function_exists('pm_project_org_unit_code')) {
+	function pm_project_org_unit_code($db_Project, $codeUnit): string
 	{
-		$ref = trim($ref);
-		return 'เอกสารฉบับนี้ใช้ลายมือชื่ออิเล็กทรอนิกส์ ตามพระราชบัญญัติว่าด้วยธุรกรรมทางอิเล็กทรอนิกส์ พ.ศ.2544 และข้อบังคับมหาวิทยาลัยเชียงใหม่ ว่าด้วยการให้ใช้ลายมือชื่ออิเล็กทรอนิกส์ พ.ศ.2564 ในระบบ PlanWise ตามรหัสอ้างอิงเลขที่ : ' . ($ref !== '' ? $ref : '-');
+		if (!($db_Project instanceof mysqli)) {
+			return '';
+		}
+		$codeUnit = trim((string)$codeUnit);
+		if ($codeUnit === '') {
+			return '';
+		}
+		$esc = mysqli_real_escape_string($db_Project, $codeUnit);
+		$q = @mysqli_query(
+			$db_Project,
+			"SELECT IFNULL(unit_code,'') AS unit_code
+			 FROM set_unit
+			 WHERE (CAST(id AS CHAR)='{$esc}' OR TRIM(CAST(IFNULL(code,'') AS CHAR))='{$esc}')
+			   AND IFNULL(status,'') NOT IN ('99','99.0')
+			 LIMIT 1"
+		);
+		$r = $q ? mysqli_fetch_assoc($q) : null;
+		return trim((string)($r['unit_code'] ?? ''));
+	}
+}
+
+/**
+ * ได้เลขที่บันทึกข้อความ: ถ้าเคยออก/บันทึกแล้วใช้ค่าเดิม
+ * ถ้าหน่วยงานมี unit_code ส่วนกลาง → ออกเลขใหม่จาก API แล้วบันทึก
+ * ถ้ายังไม่ผูก unit_code → ใช้รูปแบบเก่า paper_name/paper_start (ไม่กระทบข้อมูลเดิม)
+ */
+if (!function_exists('pm_get_or_issue_approve_memo_doc_no')) {
+	function pm_get_or_issue_approve_memo_doc_no(
+		$db_Project,
+		int $project_id,
+		?array $pre = null,
+		string $requestedBy = '',
+		string $paperName = '',
+		string $paperStart = ''
+	): string {
+		if (!($db_Project instanceof mysqli) || $project_id <= 0) {
+			return function_exists('pm_unit_paper_doc_no')
+				? pm_unit_paper_doc_no($paperName !== '' ? $paperName : 'อว', $paperStart, 1)
+				: 'อว/ผ001';
+		}
+		if (function_exists('pm_ensure_approve_memo_schema')) {
+			pm_ensure_approve_memo_schema($db_Project);
+		}
+		if (!is_array($pre)) {
+			$q = @mysqli_query(
+				$db_Project,
+				"SELECT id, code_unit, code_pre_project, name_project,
+				        IFNULL(approve_memo_doc_no,'') AS approve_memo_doc_no
+				 FROM pre_project WHERE id='" . (int)$project_id . "' LIMIT 1"
+			);
+			$pre = $q ? (mysqli_fetch_assoc($q) ?: []) : [];
+		}
+		$existing = trim((string)($pre['approve_memo_doc_no'] ?? ''));
+		if ($existing !== '') {
+			return $existing;
+		}
+
+		$orgUnitCode = pm_project_org_unit_code($db_Project, (string)($pre['code_unit'] ?? ''));
+		if ($orgUnitCode === '') {
+			return function_exists('pm_unit_paper_doc_no')
+				? pm_unit_paper_doc_no(
+					$paperName !== '' ? $paperName : 'อว',
+					$paperStart,
+					((($project_id % 999) ?: 0) + 1)
+				)
+				: 'อว/ผ001';
+		}
+
+		try {
+			require_once __DIR__ . '/document_number_client.php';
+			$code = trim((string)($pre['code_pre_project'] ?? ''));
+			if ($code === '') {
+				$code = 'P' . $project_id;
+			}
+			$name = trim((string)($pre['name_project'] ?? ''));
+			$subject = 'บันทึกข้อความขออนุมัติโครงการ ' . $code;
+			if ($name !== '') {
+				$subject .= ' ' . $name;
+			}
+			if ($requestedBy === '') {
+				$requestedBy = trim((string)($_SESSION['code'] ?? $_SESSION['r_email'] ?? 'planwise'));
+			}
+			if ($requestedBy === '') {
+				$requestedBy = 'planwise';
+			}
+			$issued = pm_document_number_issue(
+				$orgUnitCode,
+				$subject,
+				$requestedBy,
+				'pbm-approve-memo-' . $project_id,
+				'project:' . $project_id . ':approve_memo',
+				'คณบดีคณะเภสัชศาสตร์'
+			);
+			$full = trim((string)($issued['full_number'] ?? ''));
+			if ($full === '') {
+				throw new RuntimeException('empty full_number');
+			}
+			$fullEsc = mysqli_real_escape_string($db_Project, $full);
+			$unitEsc = mysqli_real_escape_string($db_Project, $orgUnitCode);
+			$issueId = (int)($issued['issue_id'] ?? 0);
+			$yearBe = (int)($issued['running_year'] ?? 0);
+			if ($yearBe > 0 && $yearBe < 2400) {
+				$yearBe += 543;
+			}
+			@mysqli_query(
+				$db_Project,
+				"UPDATE pre_project SET
+					approve_memo_doc_no='{$fullEsc}',
+					approve_memo_doc_issue_id=" . ($issueId > 0 ? ("'" . $issueId . "'") : 'NULL') . ",
+					approve_memo_doc_year_be=" . ($yearBe > 0 ? ("'" . $yearBe . "'") : 'NULL') . ",
+					approve_memo_doc_unit_code='{$unitEsc}'
+				 WHERE id='" . (int)$project_id . "'
+				   AND IFNULL(approve_memo_doc_no,'')=''
+				 LIMIT 1"
+			);
+			// ถ้ามี race ให้อ่านค่าที่ชนะ
+			$q2 = @mysqli_query(
+				$db_Project,
+				"SELECT IFNULL(approve_memo_doc_no,'') AS d FROM pre_project WHERE id='" . (int)$project_id . "' LIMIT 1"
+			);
+			$r2 = $q2 ? mysqli_fetch_assoc($q2) : null;
+			$saved = trim((string)($r2['d'] ?? ''));
+			return $saved !== '' ? $saved : $full;
+		} catch (Throwable $e) {
+			@error_log('pm_get_or_issue_approve_memo_doc_no: ' . $e->getMessage());
+			// ผูก unit_code แล้วต้องใช้รูปแบบจาก API ส่วนกลาง (MHESI…) เท่านั้น — ห้าม fallback เป็น อว/ผxxx
+			return '';
+		}
+	}
+}
+
+if (!function_exists('pm_approve_memo_esign_footer_text')) {
+	function pm_approve_memo_esign_footer_text(string $ref = ''): string
+	{
+		// ไม่แสดงรหัสอ้างอิงท้ายเอกสาร (คงเฉพาะข้อความกฎหมายลายมือชื่ออิเล็กทรอนิกส์)
+		return 'เอกสารฉบับนี้ใช้ลายมือชื่ออิเล็กทรอนิกส์ ตามพระราชบัญญัติว่าด้วยธุรกรรมทางอิเล็กทรอนิกส์ พ.ศ.2544 และข้อบังคับมหาวิทยาลัยเชียงใหม่ ว่าด้วยการให้ใช้ลายมือชื่ออิเล็กทรอนิกส์ พ.ศ.2564 ในระบบ PlanWise';
 	}
 }
 
@@ -1006,9 +1148,11 @@ if (!function_exists('pm_build_approve_memo_payload_from_db')) {
 		if ($savedDept !== '') {
 			$dept = $savedDept;
 		}
-		$docNo = function_exists('pm_unit_paper_doc_no')
-			? pm_unit_paper_doc_no($paperName, $paperStart, ((($project_id % 999) ?: 0) + 1))
-			: (rtrim($paperName, " \t/") . '/' . ltrim($paperStart, " \t/"));
+		$docNo = function_exists('pm_get_or_issue_approve_memo_doc_no')
+			? pm_get_or_issue_approve_memo_doc_no($db_Project, $project_id, $pre, '', $paperName, $paperStart)
+			: (function_exists('pm_unit_paper_doc_no')
+				? pm_unit_paper_doc_no($paperName, $paperStart, ((($project_id % 999) ?: 0) + 1))
+				: (rtrim($paperName, " \t/") . '/' . ltrim($paperStart, " \t/")));
 
 		$amt = isset($pre['notify_approved_budget']) ? (float)$pre['notify_approved_budget'] : 0.0;
 		if ($amt <= 0) {
@@ -4933,6 +5077,78 @@ function getProjectBudgetList($db_connection, $id)
 }
 
 /**
+ * ซ่อมแถว project_budget จาก meta ตอนแจ้งผล (กรณี pre_project ไม่มี code_budget
+ * และ INSERT ตอนแจ้งผลไม่ติด — แหล่งงบเหลือแค่ใน project_plan_review_log)
+ *
+ * @return bool true ถ้ามีการ insert/ซ่อมข้อมูล
+ */
+function pm_ensure_project_budget_from_notify_log($db_Project, $project_id, $staff_id = 0): bool
+{
+	$project_id = (int)$project_id;
+	if ($project_id <= 0 || !($db_Project instanceof mysqli)) {
+		return false;
+	}
+	$existing = getProjectBudgetList($db_Project, (string)$project_id);
+	if (is_array($existing) && count($existing) > 0) {
+		return false;
+	}
+	$qlog = @mysqli_query(
+		$db_Project,
+		"SELECT meta_json FROM project_plan_review_log
+		 WHERE project_id='" . $project_id . "' AND action_type='notify_plan_result'
+		 ORDER BY id DESC LIMIT 1"
+	);
+	$lr = $qlog ? mysqli_fetch_assoc($qlog) : null;
+	if (!$lr) {
+		return false;
+	}
+	$meta = json_decode((string)($lr['meta_json'] ?? ''), true);
+	if (!is_array($meta)) {
+		return false;
+	}
+	$code = trim((string)($meta['budget_code'] ?? ($meta['code_budget'] ?? '')));
+	$other = trim((string)($meta['budget_other'] ?? ''));
+	$amount = isset($meta['approved_budget']) ? (float)$meta['approved_budget'] : 0.0;
+	if ($code === '' || $code === '0') {
+		return false;
+	}
+	if ($code !== '99') {
+		$other = '';
+	}
+	if (function_exists('pm_ensure_project_budget_amount_column')) {
+		pm_ensure_project_budget_amount_column($db_Project);
+	}
+	$sid = (int)$staff_id;
+	$hasAmt = false;
+	$qCol = @mysqli_query($db_Project, "SHOW COLUMNS FROM project_budget LIKE 'budget_amount'");
+	if ($qCol && mysqli_num_rows($qCol) > 0) {
+		$hasAmt = true;
+	}
+	if ($hasAmt) {
+		$stb = @mysqli_prepare(
+			$db_Project,
+			"INSERT INTO project_budget (project_id, code_budget, budget_other, budget_amount, status, dates, staff_insert)
+			 VALUES (?, ?, ?, ?, '1', NOW(), ?)"
+		);
+		if (!$stb) {
+			return false;
+		}
+		mysqli_stmt_bind_param($stb, 'issdi', $project_id, $code, $other, $amount, $sid);
+	} else {
+		$stb = @mysqli_prepare(
+			$db_Project,
+			"INSERT INTO project_budget (project_id, code_budget, budget_other, status, dates, staff_insert)
+			 VALUES (?, ?, ?, '1', NOW(), ?)"
+		);
+		if (!$stb) {
+			return false;
+		}
+		mysqli_stmt_bind_param($stb, 'issi', $project_id, $code, $other, $sid);
+	}
+	return (bool)@mysqli_stmt_execute($stb);
+}
+
+/**
  * แปลงรหัสแหล่งงบ (+ ข้อความอื่น ๆ) เป็นชื่อที่แสดง — ชุดเดียวกับหน้าแจ้งผล
  */
 function pm_format_budget_source_label($db_Project, $code_budget, $budget_other = ''): string
@@ -6767,6 +6983,38 @@ if (!function_exists('pm_reconcile_confirmed_disburse_lines')) {
 /**
  * เติมสถานะเบิกจ่ายจากระบบ withdraw ลงใน budget report data
  */
+/** Cancelled external documents remain visible but no longer consume the project budget. */
+if (!function_exists('pm_exclude_cancelled_budget_disbursements')) {
+    function pm_exclude_cancelled_budget_disbursements(array $data): array
+    {
+        foreach ($data['activities'] as &$activity) {
+            foreach ($activity['items'] as &$item) {
+                foreach ($item['lines'] as &$line) {
+                    $status = strtolower(trim((string)($line['withdraw_raw_status'] ?? '')));
+                    if (!in_array($status, ['cancelled', 'canceled'], true)) {
+                        continue;
+                    }
+                    $amount = (float)($line['amount'] ?? 0);
+                    $line['cancelled_amount'] = $line['cancelled_amount'] ?? $amount;
+                    $line['is_cancelled'] = true;
+                    $line['amount'] = 0.0;
+                    $item['disbursed'] = round((float)($item['disbursed'] ?? 0) - $amount, 2);
+                    $activity['disbursed'] = round((float)($activity['disbursed'] ?? 0) - $amount, 2);
+                    $data['project_disbursed_total'] = round((float)($data['project_disbursed_total'] ?? 0) - $amount, 2);
+                    $month = trim((string)($line['disburse_month'] ?? ''));
+                    if ($month !== '' && isset($data['project_disbursed_months'][$month])) {
+                        $data['project_disbursed_months'][$month] = round((float)$data['project_disbursed_months'][$month] - $amount, 2);
+                    }
+                }
+                unset($line);
+            }
+            unset($item);
+        }
+        unset($activity);
+        return $data;
+    }
+}
+
 if (!function_exists('pm_enrich_budget_report_withdraw_status')) {
 	function pm_enrich_budget_report_withdraw_status($db_Project, int $project_id, array $data): array
 	{
@@ -6893,7 +7141,7 @@ if (!function_exists('pm_enrich_budget_report_withdraw_status')) {
 			unset($it);
 		}
 		unset($act);
-		return $data;
+		return pm_exclude_cancelled_budget_disbursements($data);
 	}
 }
 

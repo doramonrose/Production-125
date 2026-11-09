@@ -267,8 +267,9 @@ $unitShow = $unit !== '' ? $unit : 'หน่วยงาน';
 if ($dept === '') {
 	$dept = $unitShow . ' คณะเภสัชศาสตร์ โทร.44344';
 }
+// เลขที่ต้องมาจาก API ส่วนกลาง (รูปแบบ MHESI…/ลำดับ) — ห้ามประกอบ อว/ผxxx เอง
 if ($doc_no === '') {
-	$doc_no = function_exists('pm_unit_paper_doc_no') ? pm_unit_paper_doc_no('อว', 'ผ001') : 'อว/ผ001';
+	$doc_no = '....................';
 }
 $doc_no = preg_replace('#\s*/+\s*#', '/', trim((string)$doc_no));
 if ($date === '') {

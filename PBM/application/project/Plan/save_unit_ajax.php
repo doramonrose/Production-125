@@ -31,6 +31,11 @@ try {
     $unit_name = mysqli_real_escape_string($db_Project, trim((string)($_POST['unit_name'] ?? '')));
     $paper_name = trim((string)($_POST['paper_name'] ?? ''));
     $paper_start = trim((string)($_POST['paper_start'] ?? ''));
+	// รหัสหน่วยงานส่วนกลางสำหรับออกเลข (เชื่อม API) — แยกจาก code ท้องถิ่น U###
+	$org_unit_code = trim((string)($_POST['org_unit_code'] ?? $_POST['central_unit_code'] ?? ''));
+	if (strlen($org_unit_code) > 20) {
+		$org_unit_code = substr($org_unit_code, 0, 20);
+	}
     $code_department = isset($_POST['code_department']) ? (int) $_POST['code_department'] : 0;
     $code_job = isset($_POST['code_job']) ? (int) $_POST['code_job'] : 0;
 
@@ -58,6 +63,7 @@ try {
     $hasCodeDeptCol = false;
     $hasPaperNameCol = false;
     $hasPaperStartCol = false;
+	$hasUnitCodeCol = false;
     try {
         $qcol = mysqli_query($db_Project, "SHOW COLUMNS FROM set_unit");
         if ($qcol) {
@@ -70,13 +76,18 @@ try {
                 if ($name === 'code_department') $hasCodeDeptCol = true;
                 if ($name === 'paper_name') $hasPaperNameCol = true;
                 if ($name === 'paper_start') $hasPaperStartCol = true;
+				if ($name === 'unit_code') $hasUnitCodeCol = true;
             }
         }
     } catch (Throwable $e) {
         @error_log('save_unit_ajax: show columns set_unit.code failed: ' . $e->getMessage());
     }
 
-    $unit_code = '';
+	if ($org_unit_code === '') {
+		json_fail('กรุณาเลือกหน่วยงานส่วนกลางสำหรับใช้เลขที่บันทึกข้อความ (unit_code)');
+	}
+
+    $local_unit_code = '';
     if ($hasCodeCol) {
         $maxN = 0;
         try {
@@ -95,10 +106,10 @@ try {
         }
 
         $nextN = $maxN + 1;
-        $unit_code = 'U' . str_pad((string)$nextN, 3, '0', STR_PAD_LEFT);
+        $local_unit_code = 'U' . str_pad((string)$nextN, 3, '0', STR_PAD_LEFT);
         $tries = 0;
         while ($tries < 50) {
-            $codeEsc = mysqli_real_escape_string($db_Project, $unit_code);
+            $codeEsc = mysqli_real_escape_string($db_Project, $local_unit_code);
             $chk = null;
             try {
                 $chk = mysqli_query($db_Project, "SELECT 1 FROM set_unit WHERE code = '$codeEsc' LIMIT 1");
@@ -110,7 +121,7 @@ try {
                 break;
             }
             $nextN++;
-            $unit_code = 'U' . str_pad((string)$nextN, 3, '0', STR_PAD_LEFT);
+            $local_unit_code = 'U' . str_pad((string)$nextN, 3, '0', STR_PAD_LEFT);
             $tries++;
         }
     }
@@ -150,7 +161,7 @@ try {
         $vals = [];
         if ($hasCodeCol) {
             $cols[] = 'code';
-            $vals[] = "'" . mysqli_real_escape_string($db_Project, $unit_code) . "'";
+            $vals[] = "'" . mysqli_real_escape_string($db_Project, $local_unit_code) . "'";
         }
         $cols[] = 'name';
         $vals[] = "'" . $unit_name . "'";
@@ -175,6 +186,10 @@ try {
             $cols[] = 'code_department';
             $vals[] = $code_department > 0 ? (string)(int)$code_department : "NULL";
         }
+		if ($hasUnitCodeCol) {
+			$cols[] = 'unit_code';
+			$vals[] = "'" . mysqli_real_escape_string($db_Project, $org_unit_code) . "'";
+		}
         if ($hasPaperNameCol) {
             $cols[] = 'paper_name';
             $vals[] = "'" . mysqli_real_escape_string($db_Project, $paper_name) . "'";
@@ -190,13 +205,13 @@ try {
         if (!$sqlUnit) {
             $err = mysqli_error($db_Project);
             @error_log('save_unit_ajax: insert set_unit failed: ' . $err);
-            json_fail('บันทึกหน่วยงานไม่สำเร็จ', $debug ? ['debug' => ['sql' => $sqlInsertUnit, 'mysqli_error' => $err, 'unit_code' => $unit_code, 'job_code' => $job_code_value, 'dep_code' => $dep_code_value]] : []);
+            json_fail('บันทึกหน่วยงานไม่สำเร็จ', $debug ? ['debug' => ['sql' => $sqlInsertUnit, 'mysqli_error' => $err, 'unit_code' => $local_unit_code, 'job_code' => $job_code_value, 'dep_code' => $dep_code_value]] : []);
         }
         $new_unit_id = (int) mysqli_insert_id($db_Project);
     } catch (Throwable $e) {
         // กรณี mysqli strict โยน exception
         @error_log('save_unit_ajax: insert set_unit exception: ' . $e->getMessage());
-        json_fail('บันทึกหน่วยงานไม่สำเร็จ', $debug ? ['debug' => ['exception' => $e->getMessage(), 'unit_code' => $unit_code]] : []);
+        json_fail('บันทึกหน่วยงานไม่สำเร็จ', $debug ? ['debug' => ['exception' => $e->getMessage(), 'unit_code' => $local_unit_code]] : []);
     }
 
     $vcd = $code_department > 0 ? "'" . (int)$code_department . "'" : 'NULL';
@@ -268,7 +283,8 @@ try {
 
     json_ok([
         'unit_id' => $new_unit_id,
-        'unit_code' => $unit_code,
+        'unit_code' => $local_unit_code,
+		'org_unit_code' => $org_unit_code,
         'inserted' => $inserted,
         'failed' => $failed,
     ]);

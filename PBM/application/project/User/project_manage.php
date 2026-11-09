@@ -9453,13 +9453,26 @@ if ($op === 'notify_plan_result_ajax') {
 			echo json_encode(['ok' => 0, 'msg' => (mysqli_error($db_Project) ?: 'บันทึกแจ้งผลไม่สำเร็จ')], JSON_UNESCAPED_UNICODE);
 			exit;
 		}
-		// ให้แหล่งงบอยู่ใน project_budget ด้วย — modal user / ผู้ตรวจสอบ / หน่วยแผน อ่านชุดเดียวกัน
+		// ให้แหล่งงบอยู่ใน project_budget ด้วย — pre_project ไม่มีคอลัมน์ code_budget ใน schema จริง
 		if ($notify_result !== 'rejected' && $budget_code !== '') {
 			$sidPb = 0;
-			if (!empty($sid)) {
-				$sidPb = (int)$sid;
-			} elseif (!empty($staff_id)) {
+			$sess_email_pb = $_SESSION['r_email'] ?? '';
+			$sess_code_pb = $_SESSION['code'] ?? '';
+			if ($sess_email_pb !== '' && $sess_code_pb !== '' && isset($db_person) && $db_person instanceof mysqli) {
+				$stPbSid = mysqli_prepare($db_person, 'SELECT id FROM staff WHERE email = ? AND code = ? LIMIT 1');
+				if ($stPbSid) {
+					mysqli_stmt_bind_param($stPbSid, 'ss', $sess_email_pb, $sess_code_pb);
+					mysqli_stmt_execute($stPbSid);
+					$rsPbSid = mysqli_stmt_get_result($stPbSid);
+					$rwPbSid = $rsPbSid ? mysqli_fetch_assoc($rsPbSid) : null;
+					$sidPb = (int)($rwPbSid['id'] ?? 0);
+				}
+			}
+			if ($sidPb <= 0 && !empty($staff_id)) {
 				$sidPb = (int)$staff_id;
+			}
+			if (function_exists('pm_ensure_project_budget_amount_column')) {
+				pm_ensure_project_budget_amount_column($db_Project);
 			}
 			@mysqli_query(
 				$db_Project,
@@ -9469,11 +9482,23 @@ if ($op === 'notify_plan_result_ajax') {
 			$boSave = ($budget_code === '99') ? $budget_other : '';
 			$stbPb = @mysqli_prepare(
 				$db_Project,
-				"INSERT INTO project_budget (project_id, code_budget, budget_other, status, dates, staff_insert) VALUES (?, ?, ?, '1', NOW(), ?)"
+				"INSERT INTO project_budget (project_id, code_budget, budget_other, budget_amount, status, dates, staff_insert)
+				 VALUES (?, ?, ?, ?, '1', NOW(), ?)"
 			);
 			if ($stbPb) {
-				mysqli_stmt_bind_param($stbPb, 'issi', $project_id, $budget_code, $boSave, $sidPb);
-				@mysqli_stmt_execute($stbPb);
+				mysqli_stmt_bind_param($stbPb, 'issdi', $project_id, $budget_code, $boSave, $approved_budget, $sidPb);
+				if (!mysqli_stmt_execute($stbPb)) {
+					// fallback ไม่มี budget_amount
+					$stbPb2 = @mysqli_prepare(
+						$db_Project,
+						"INSERT INTO project_budget (project_id, code_budget, budget_other, status, dates, staff_insert)
+						 VALUES (?, ?, ?, '1', NOW(), ?)"
+					);
+					if ($stbPb2) {
+						mysqli_stmt_bind_param($stbPb2, 'issi', $project_id, $budget_code, $boSave, $sidPb);
+						mysqli_stmt_execute($stbPb2);
+					}
+				}
 			}
 		}
 		// log: เก็บประวัติการแจ้งผล/ตีกลับจากหน่วยแผน
@@ -9512,7 +9537,7 @@ if ($op === 'notify_plan_result_ajax') {
 	}
 }
 
-// หน่วยแผนกำหนดแหล่งงบโครงการยื่นระหว่างปี (ข้ามขั้นบรรจุแผน จึงยังไม่เคยเลือกแหล่งงบ)
+// หน่วยแผนกำหนด/แก้ไขแหล่งงบ (ยื่นระหว่างปี + flow พิจารณาแผนปกติหลังนำเข้าที่ประชุม/แจ้งผล)
 if ($op === 'plan_admin_set_budget_source_ajax') {
 	header('Content-Type: application/json; charset=utf-8');
 	try {
@@ -9553,12 +9578,13 @@ if ($op === 'plan_admin_set_budget_source_ajax') {
 			 FROM pre_project WHERE id='" . (int)$project_id . "' AND status='1' LIMIT 1"
 		);
 		$row = $q ? mysqli_fetch_assoc($q) : null;
-		if (!$row || (int)($row['midyear_request'] ?? 0) !== 1) {
-			echo json_encode(['ok' => 0, 'msg' => 'แก้ไขแหล่งงบแบบนี้ใช้กับโครงการยื่นระหว่างปี'], JSON_UNESCAPED_UNICODE);
+		if (!$row) {
+			echo json_encode(['ok' => 0, 'msg' => 'ไม่พบโครงการ'], JSON_UNESCAPED_UNICODE);
 			exit;
 		}
 		$stNow = (string)($row['status_project'] ?? '');
-		if (!in_array($stNow, ['1', '8'], true)) {
+		// 1 = อนุมัติ/ระหว่างปี, 4 = นำเข้าที่ประชุมหรือแจ้งผลบรรจุแผนแล้ว, 8 = ให้แก้ไข
+		if (!in_array($stNow, ['1', '4', '8'], true)) {
 			echo json_encode(['ok' => 0, 'msg' => 'สถานะโครงการนี้ไม่อนุญาตให้แก้ไขแหล่งงบ'], JSON_UNESCAPED_UNICODE);
 			exit;
 		}
@@ -12072,6 +12098,12 @@ if ($op === 'add_project') {
 		$saved_persons = getProjectPersonList($db_Project, $edit_project_id);
 		$saved_deps = getProjectDepartmentList($db_Project, $edit_project_id, 1);
 		$saved_budgets = getProjectBudgetList($db_Project, $edit_project_id);
+		// ซ่อมแหล่งงบจาก log แจ้งผล ถ้ายังไม่มีแถวใน project_budget (schema ไม่มี code_budget ที่ pre_project)
+		if ((!$saved_budgets || count($saved_budgets) === 0)
+			&& function_exists('pm_ensure_project_budget_from_notify_log')
+			&& pm_ensure_project_budget_from_notify_log($db_Project, (int)$edit_project_id, (int)($staff_id ?? 0))) {
+			$saved_budgets = getProjectBudgetList($db_Project, $edit_project_id);
+		}
 		if (is_array($saved_pre)) {
 			$years_select = $saved_pre['year_project'] ?? $years_select;
 			$code_unit = planResolvePreProjectCodeUnit($db_Project, (string) ($saved_pre['code_unit'] ?? ''));
@@ -15891,7 +15923,7 @@ if ($op === 'add_project') {
 					$pm_ro_memo_name = trim((string)($saved_pre['name_project'] ?? ''));
 					$pm_ro_memo_budget_fmt = '0';
 					$pm_ro_memo_budget_src = '-';
-					$pm_ro_memo_at = 'อว /ผ001';
+					$pm_ro_memo_at = '';
 					$pm_ro_memo_subject = 'ขออนุมัติดำเนินโครงการ ' . ($pm_ro_memo_name !== '' ? $pm_ro_memo_name : '…') . ' (' . ($pm_ro_memo_code !== '' ? $pm_ro_memo_code : '…') . ')';
 					if ($pm_show_request_operate_btn && $edit_project_id > 0) {
 						$__uc = (string)($saved_pre['code_unit'] ?? '');
@@ -15909,7 +15941,22 @@ if ($op === 'add_project') {
 								$pm_ro_memo_budget_src = $__srcResolved;
 							}
 						}
-						$pm_ro_memo_at = 'อว /ผ' . str_pad((string)((($edit_project_id % 999) ?: 0) + 1), 3, '0', STR_PAD_LEFT);
+						// แสดงเลขคาดการณ์รูปแบบกลาง (MHESI…) — ยังไม่จองเลข จนกว่าจะออกเอกสารจริง
+						$__savedDoc = trim((string)($saved_pre['approve_memo_doc_no'] ?? ''));
+						if ($__savedDoc !== '') {
+							$pm_ro_memo_at = $__savedDoc;
+						} elseif (function_exists('pm_project_org_unit_code')) {
+							$__orgUc = pm_project_org_unit_code($db_Project, $__uc);
+							if ($__orgUc !== '') {
+								try {
+									require_once __DIR__ . '/../fn/document_number_client.php';
+									$__prev = pm_document_number_preview($__orgUc);
+									$pm_ro_memo_at = trim((string)($__prev['full_number'] ?? ''));
+								} catch (Throwable $__ePrev) {
+									$pm_ro_memo_at = '';
+								}
+							}
+						}
 					}
 				?>
 				<?php if ($pm_show_request_operate_btn): ?>
@@ -18999,7 +19046,14 @@ if ($op === 'add_project') {
 					$pm_notify_code_budget = trim((string)($saved_pre['code_budget'] ?? ($saved_budgets[0]['code_budget'] ?? '')));
 					$pm_notify_budget_other = trim((string)($saved_pre['budget_other'] ?? ($saved_budgets[0]['budget_other'] ?? '')));
 					$pm_notify_budget_src = '-';
-					if ($pm_notify_code_budget !== '') {
+					// ใช้ resolver เดียวกับหน้าอื่น (รองรับหลายแหล่ง / รหัสจากงบกลาง)
+					if (function_exists('resolveProjectBudgetSourceForDisplay')) {
+						$__resolvedNotifySrc = trim((string)resolveProjectBudgetSourceForDisplay($db_Project, (int)$edit_project_id));
+						if ($__resolvedNotifySrc !== '' && $__resolvedNotifySrc !== '-') {
+							$pm_notify_budget_src = $__resolvedNotifySrc;
+						}
+					}
+					if (($pm_notify_budget_src === '' || $pm_notify_budget_src === '-') && $pm_notify_code_budget !== '') {
 						$__labels = [];
 						if (function_exists('getAddBudgetSelect')) {
 							foreach (getAddBudgetSelect($db_Project) as $__brow) {
@@ -19014,6 +19068,9 @@ if ($op === 'add_project') {
 							$pm_notify_budget_src = $pm_notify_budget_other;
 						} elseif (isset($__labels[$pm_notify_code_budget]) && $__labels[$pm_notify_code_budget] !== '') {
 							$pm_notify_budget_src = $__labels[$pm_notify_code_budget];
+						} elseif (function_exists('pm_format_budget_source_label')) {
+							$__fmt = trim((string)pm_format_budget_source_label($db_Project, $pm_notify_code_budget, $pm_notify_budget_other));
+							$pm_notify_budget_src = $__fmt !== '' ? $__fmt : $pm_notify_code_budget;
 						} elseif (function_exists('getSetBudget')) {
 							$__bset = getSetBudget($db_Project, $pm_notify_code_budget);
 							$__bn = trim((string)($__bset['name'] ?? ''));
@@ -19325,6 +19382,28 @@ if ($op === 'add_project') {
 							$pm_plan_budget_other = trim((string)($__savedBudgetRow['budget_other'] ?? ''));
 						}
 					}
+					// ดึงรหัสจาก log แจ้งผล ถ้ายังว่าง (schema ไม่มี code_budget ที่ pre_project)
+					if ($pm_plan_budget_code === '' || $pm_plan_budget_code === '0') {
+						$__qLogCb = @mysqli_query(
+							$db_Project,
+							"SELECT meta_json FROM project_plan_review_log
+							 WHERE project_id='" . (int)$edit_project_id . "' AND action_type='notify_plan_result'
+							 ORDER BY id DESC LIMIT 1"
+						);
+						$__logCbRow = $__qLogCb ? mysqli_fetch_assoc($__qLogCb) : null;
+						$__logMeta = json_decode((string)($__logCbRow['meta_json'] ?? ''), true);
+						if (is_array($__logMeta)) {
+							$__logCode = trim((string)($__logMeta['budget_code'] ?? ($__logMeta['code_budget'] ?? '')));
+							$__logOther = trim((string)($__logMeta['budget_other'] ?? ''));
+							if ($__logCode !== '' && $__logCode !== '0') {
+								$pm_plan_budget_code = $__logCode;
+								if ($pm_plan_budget_other === '' && $__logOther !== '') {
+									$pm_plan_budget_other = $__logOther;
+								}
+							}
+						}
+					}
+					$pm_plan_budget_editor_rendered = false;
 					$__joinedSrc = function_exists('pm_joined_budget_source_label')
 						? pm_joined_budget_source_label($db_Project, (int)$edit_project_id)
 						: null;
@@ -19340,10 +19419,10 @@ if ($op === 'add_project') {
 					} elseif ($pm_plan_budget_code !== '') {
 						$pm_pa_memo_budget_src = $pm_plan_budget_code;
 					}
+					// Admin แก้แหล่งงบได้ทั้งยื่นระหว่างปี และ flow พิจารณาแผนปกติ (สถานะ 4 = นำเข้าที่ประชุม/บรรจุแผนแล้ว)
 					$pm_plan_can_edit_budget_src = (defined('PLAN_ADMIN') && PLAN_ADMIN)
-						&& !empty($pm_is_midyear)
 						&& $edit_project_id > 0
-						&& in_array((string)($saved_pre['status_project'] ?? ''), ['1', '8'], true)
+						&& in_array((string)($saved_pre['status_project'] ?? ''), ['1', '4', '8'], true)
 						&& !($pm_notify_result_txt !== '' && preg_match('/ไม่ผ่าน/u', $pm_notify_result_txt));
 					$pm_plan_budget_opts = [];
 					if ($pm_plan_can_edit_budget_src && function_exists('pm_plan_budget_source_choices')) {
@@ -19808,6 +19887,18 @@ if ($op === 'add_project') {
 						</div>
 						<?php endif; ?>
 					</div>
+					<?php if (!empty($pm_plan_can_edit_budget_src) && empty($pm_plan_budget_editor_rendered) && function_exists('pm_render_plan_budget_source_editor')): ?>
+						<?php
+							$pm_plan_budget_editor_rendered = true;
+							pm_render_plan_budget_source_editor(
+								(int)$edit_project_id,
+								(string)($pm_plan_budget_code ?? ''),
+								(string)($pm_plan_budget_other ?? ''),
+								is_array($pm_plan_budget_opts ?? null) ? $pm_plan_budget_opts : [],
+								(string)($years_select ?? '')
+							);
+						?>
+					<?php endif; ?>
 					<?php if ($pm_notify_note_txt !== '' && $pm_notify_result_txt !== 'บรรจุแผน'): ?>
 						<div class="pm-notify-result-note">
 							<i class="fa fa-comment-dots mr-1"></i><?= htmlspecialchars($pm_notify_note_txt, ENT_QUOTES, 'UTF-8') ?>
@@ -20349,7 +20440,7 @@ if ($op === 'add_project') {
 					$pm_am_budget_fmt = '0';
 					$pm_am_budget_src = trim((string)($pm_notify_budget_src ?? '-'));
 					$pm_am_dept = '';
-					$pm_am_doc_no = 'อว /ผ001';
+					$pm_am_doc_no = '';
 					$pm_am_date = '';
 					$pm_am_proposer_name = '';
 					$pm_am_proposer_pos = '';
@@ -20400,13 +20491,22 @@ if ($op === 'add_project') {
 								}
 							}
 						}
-						$pm_am_doc_no = function_exists('pm_unit_paper_doc_no')
-							? pm_unit_paper_doc_no(
+						$pm_am_doc_no = function_exists('pm_get_or_issue_approve_memo_doc_no')
+							? pm_get_or_issue_approve_memo_doc_no(
+								$db_Project,
+								(int)$edit_project_id,
+								is_array($saved_pre) ? $saved_pre : null,
+								trim((string)($_SESSION['code'] ?? $_SESSION['r_email'] ?? '')),
 								$__paperName,
-								$__paperStart,
-								((($edit_project_id % 999) ?: 0) + 1)
+								(string)$__paperStart
 							)
-							: (rtrim($__paperName, " \t/") . '/' . ltrim((string)$__paperStart, " \t/"));
+							: (function_exists('pm_unit_paper_doc_no')
+								? pm_unit_paper_doc_no(
+									$__paperName,
+									$__paperStart,
+									((($edit_project_id % 999) ?: 0) + 1)
+								)
+								: (rtrim($__paperName, " \t/") . '/' . ltrim((string)$__paperStart, " \t/")));
 
 						$__amtAm = isset($saved_pre['notify_approved_budget']) ? (float)$saved_pre['notify_approved_budget'] : 0.0;
 						if ($__amtAm <= 0) {
@@ -20738,9 +20838,12 @@ if ($op === 'add_project') {
 							รอการอนุมัติโครงการตาม Flow (<?= (int)$pm_approve_ok_count ?>/<?= (int)$pm_approve_count ?> ลำดับ)
 						</div>
 					<?php endif; ?>
-					<?php if (!empty($pm_plan_can_edit_budget_src) && empty($pm_show_plan_admin_operate_chain) && function_exists('pm_render_plan_budget_source_editor')): ?>
+					<?php if (!empty($pm_plan_can_edit_budget_src) && empty($pm_show_plan_admin_operate_chain) && empty($pm_plan_budget_editor_rendered) && function_exists('pm_render_plan_budget_source_editor')): ?>
 						<div class="small text-muted mt-2">แหล่งงบ: <strong class="text-dark"><?= htmlspecialchars(($pm_pa_memo_budget_src !== '' && $pm_pa_memo_budget_src !== '-') ? $pm_pa_memo_budget_src : 'ยังไม่ได้เลือก', ENT_QUOTES, 'UTF-8') ?></strong></div>
-						<?php pm_render_plan_budget_source_editor((int)$edit_project_id, (string)($pm_plan_budget_code ?? ''), (string)($pm_plan_budget_other ?? ''), is_array($pm_plan_budget_opts ?? null) ? $pm_plan_budget_opts : [], (string)($years_select ?? '')); ?>
+						<?php
+							$pm_plan_budget_editor_rendered = true;
+							pm_render_plan_budget_source_editor((int)$edit_project_id, (string)($pm_plan_budget_code ?? ''), (string)($pm_plan_budget_other ?? ''), is_array($pm_plan_budget_opts ?? null) ? $pm_plan_budget_opts : [], (string)($years_select ?? ''));
+						?>
 					<?php endif; ?>
 					<?php if (!empty($pm_approver_rows) && empty($pm_is_legacy_operate_approver)): ?>
 						<div class="pm-review-timeline mt-2">
@@ -20955,8 +21058,11 @@ if ($op === 'add_project') {
 						<span class="mx-1">·</span>
 						<span>แหล่งงบ: <strong class="text-dark"><?= htmlspecialchars(($pm_pa_memo_budget_src !== '' && $pm_pa_memo_budget_src !== '-') ? $pm_pa_memo_budget_src : 'ยังไม่ได้เลือก', ENT_QUOTES, 'UTF-8') ?></strong></span>
 					</div>
-					<?php if (!empty($pm_plan_can_edit_budget_src) && function_exists('pm_render_plan_budget_source_editor')): ?>
-						<?php pm_render_plan_budget_source_editor((int)$edit_project_id, (string)($pm_plan_budget_code ?? ''), (string)($pm_plan_budget_other ?? ''), is_array($pm_plan_budget_opts ?? null) ? $pm_plan_budget_opts : [], (string)($years_select ?? '')); ?>
+					<?php if (!empty($pm_plan_can_edit_budget_src) && empty($pm_plan_budget_editor_rendered) && function_exists('pm_render_plan_budget_source_editor')): ?>
+						<?php
+							$pm_plan_budget_editor_rendered = true;
+							pm_render_plan_budget_source_editor((int)$edit_project_id, (string)($pm_plan_budget_code ?? ''), (string)($pm_plan_budget_other ?? ''), is_array($pm_plan_budget_opts ?? null) ? $pm_plan_budget_opts : [], (string)($years_select ?? ''));
+						?>
 					<?php endif; ?>
 					<div class="pm-pa-approval-panel">
 						<div class="pm-pa-approval-head d-flex flex-wrap justify-content-between align-items-center">
@@ -28250,7 +28356,7 @@ if ($op === 'add_project') {
 			}
 			$pm_chg_am_doc_no = trim((string)($pm_am_doc_no ?? ''));
 			if ($pm_chg_am_doc_no === '') {
-				$pm_chg_am_doc_no = function_exists('pm_unit_paper_doc_no') ? pm_unit_paper_doc_no('อว', 'ผ001') : 'อว/ผ001';
+				$pm_chg_am_doc_no = '';
 			}
 			$pm_chg_am_proposer_name = trim((string)($pm_am_proposer_name ?? ''));
 			$pm_chg_am_proposer_pos = trim((string)($pm_am_proposer_pos ?? ''));
@@ -29244,14 +29350,8 @@ if ($op === 'add_project') {
 			if (foot.parentNode !== mount) {
 				mount.appendChild(foot);
 			}
-			var raw = String(foot.textContent || '').replace(/\s+/g, ' ').trim();
-			var paper = mount.querySelector('.pm-am-paper');
-			var ref = paper ? String(paper.getAttribute('data-esign-ref') || '').trim() : '';
-			var m = raw.match(/รหัสอ้างอิงเลขที่\s*:\s*(.+)$/);
-			if (m && String(m[1] || '').trim()) ref = String(m[1] || '').trim();
-			if (!ref) ref = '-';
 			var line1 = 'เอกสารฉบับนี้ใช้ลายมือชื่ออิเล็กทรอนิกส์ ตามพระราชบัญญัติว่าด้วยธุรกรรมทางอิเล็กทรอนิกส์ พ.ศ.2544';
-			var line2 = 'และข้อบังคับมหาวิทยาลัยเชียงใหม่ ว่าด้วยการให้ใช้ลายมือชื่ออิเล็กทรอนิกส์ พ.ศ.2564 ในระบบ PlanWise ตามรหัสอ้างอิงเลขที่ : ' + ref;
+			var line2 = 'และข้อบังคับมหาวิทยาลัยเชียงใหม่ ว่าด้วยการให้ใช้ลายมือชื่ออิเล็กทรอนิกส์ พ.ศ.2564 ในระบบ PlanWise';
 			foot.textContent = '';
 			var a = document.createElement('div');
 			a.className = 'pm-am-esign-line';
