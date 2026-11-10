@@ -133,7 +133,10 @@ if (!function_exists('project_all_execute_save_project')) {
 					exit;
 				}
 			}
-			if (function_exists('pm_project_allows_kpi_result_fill') && pm_project_allows_kpi_result_fill($db_Project, $project_id)) {
+			// ผู้ใช้ทั่วไป: โครงการที่อนุมัติแล้วห้ามแก้ชื่อ — หน่วยแผน (PLAN_ADMIN) แก้ได้
+			if (!(defined('PLAN_ADMIN') && PLAN_ADMIN)
+				&& function_exists('pm_project_allows_kpi_result_fill')
+				&& pm_project_allows_kpi_result_fill($db_Project, $project_id)) {
 				$qCurName = @mysqli_query($db_Project, "SELECT name_project FROM pre_project WHERE id='" . (int)$project_id . "' LIMIT 1");
 				$rowCurName = $qCurName ? mysqli_fetch_assoc($qCurName) : null;
 				$curName = trim((string)($rowCurName['name_project'] ?? ''));

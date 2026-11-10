@@ -1361,11 +1361,11 @@ if (!function_exists('pm_build_approve_memo_payload_from_db')) {
 				'budget_src' => $budgetSrc !== '' ? $budgetSrc : '-',
 				'proposer_name' => $proposerName,
 				'proposer_pos' => $proposerPos,
-				'proposer_date' => $proposerDate,
+				'proposer_date' => '',
 				'proposer_sig' => $proposerSig,
 				'approver_name' => $approverName,
 				'approver_pos' => $approverPos,
-				'approver_date' => $approverDate,
+				'approver_date' => '',
 				'approver_sig' => $approverSig,
 			],
 		];
@@ -1661,8 +1661,17 @@ if (!function_exists('pm_ab_operate_progress')) {
 		if ($pid <= 0 || !$db_Project) {
 			return $out;
 		}
+		// ถ้าแถวที่ส่งมาตัดคอลัมน์ operate_* ออก ให้โหลดแถวเต็มก่อนนับ progress
 		$certJson = (string)($row['operate_certifiers_json'] ?? '');
 		$apprJson = (string)($row['operate_approvers_json'] ?? '');
+		if (($certJson === '' && $apprJson === '') && function_exists('pm_load_operate_stage_row')) {
+			$full = pm_load_operate_stage_row($db_Project, $pid, $row);
+			if (is_array($full) && $full) {
+				$row = array_merge($row, $full);
+				$certJson = (string)($row['operate_certifiers_json'] ?? '');
+				$apprJson = (string)($row['operate_approvers_json'] ?? '');
+			}
+		}
 		$certMap = function_exists('pm_load_operate_decision_map')
 			? pm_load_operate_decision_map($db_Project, $pid, 'project_operate_certifier_decision')
 			: [];
@@ -8843,11 +8852,11 @@ function getOverviewProjectList($db_Project, $years_select, $code_unit_filter = 
     $code_unit_filter = trim($code_unit_filter);
     $keyword = trim($keyword);
 
+    // ใช้ p.* ให้ครบฟิลด์เดียวกับหน้ารายการโครงการของฉัน
+    // (operate_*_json / result_report_* / midyear) — ไม่งั้น pm_resolve_ab_status จะนับ progress เป็น 0
+    // แล้วหล่นไปข้อความ B2 ผู้ตรวจสอบหน่วยงาน ผิดจากสถานะจริง
     $sql = "
-        SELECT p.id, p.year_project, p.code_pre_project, p.name_project, p.code_unit,
-               p.staff_insert, p.status_project, p.notify_result, p.notify_result_note,
-               p.user_fix_note, p.operate_submitter_reply_note, p.midyear_request,
-               p.result_report_submitted_at, p.result_report_completed_at,
+        SELECT p.*,
                IFNULL((SELECT SUM(pa.total) FROM project_activity_budget pa WHERE pa.code_pre_project = p.id AND pa.status != '99'), 0) AS budget_total,
                IFNULL((
                    SELECT SUM(CAST(IFNULL(l.amount, 0) AS DECIMAL(18, 2)))

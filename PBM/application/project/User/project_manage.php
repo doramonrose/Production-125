@@ -101,14 +101,15 @@ if (!function_exists('pm_is_include_meeting_view_only')) {
 if (!function_exists('pm_can_edit_full_or_plan')) {
 	function pm_can_edit_full_or_plan($status_project, $notify_result = '', $user_fix_note = '')
 	{
+		// หน่วยแผนแก้ไขได้แม้สถานะนำเข้าที่ประชุมรอแจ้งผล (อยู่ระหว่างพิจารณา งานแผน)
+		if (defined('PLAN_ADMIN') && PLAN_ADMIN) {
+			return true;
+		}
 		if (function_exists('pm_is_include_meeting_view_only') && pm_is_include_meeting_view_only($status_project, $notify_result)) {
 			return false;
 		}
 		if (function_exists('pm_is_plan_fix_awaiting_review') && pm_is_plan_fix_awaiting_review($status_project, $notify_result, $user_fix_note)) {
 			return false;
-		}
-		if (defined('PLAN_ADMIN') && PLAN_ADMIN) {
-			return true;
 		}
 		$st = (string)$status_project;
 		if ($st === '0') {
@@ -3537,7 +3538,9 @@ if ($op === 'render_activity_table') {
 		$nrNow = (string)($rp['notify_result'] ?? '');
 		// สถานะ 4 + บรรจุแผน = แผนปฏิบัติการ (ขออนุมัติดำเนินโครงการ): อนุญาตแก้ไขกิจกรรมได้
 		$is_locked_project = ($stNow !== '0' && $stNow !== '8' && $stNow !== '4');
-		if (function_exists('pm_is_include_meeting_view_only') && pm_is_include_meeting_view_only($stNow, $nrNow)) {
+		if (!(defined('PLAN_ADMIN') && PLAN_ADMIN)
+			&& function_exists('pm_is_include_meeting_view_only')
+			&& pm_is_include_meeting_view_only($stNow, $nrNow)) {
 			$is_locked_project = true;
 		}
 	}
@@ -5418,7 +5421,9 @@ if ($op === 'render_budget_table') {
 		$nrNow = (string)($rp['notify_result'] ?? '');
 		// สถานะ 4 + บรรจุแผน = แผนปฏิบัติการ (ขออนุมัติดำเนินโครงการ): อนุญาตแก้ไขงบรายกิจกรรมได้
 		$is_locked_project = ($stNow !== '0' && $stNow !== '8' && $stNow !== '4');
-		if (function_exists('pm_is_include_meeting_view_only') && pm_is_include_meeting_view_only($stNow, $nrNow)) {
+		if (!(defined('PLAN_ADMIN') && PLAN_ADMIN)
+			&& function_exists('pm_is_include_meeting_view_only')
+			&& pm_is_include_meeting_view_only($stNow, $nrNow)) {
 			$is_locked_project = true;
 		}
 	}
@@ -6930,7 +6935,8 @@ if ($op === 'render_kpi_goal_table') {
 	$pm_kpi_hide_edit = false;
 	$stpKpi = @mysqli_query($db_Project, "SELECT status_project, notify_result FROM pre_project WHERE id='".(int)$project_id."' LIMIT 1");
 	if ($stpKpi && $rpKpi = mysqli_fetch_assoc($stpKpi)) {
-		$pm_kpi_hide_edit = function_exists('pm_is_include_meeting_view_only')
+		$pm_kpi_hide_edit = !(defined('PLAN_ADMIN') && PLAN_ADMIN)
+			&& function_exists('pm_is_include_meeting_view_only')
 			&& pm_is_include_meeting_view_only((string)($rpKpi['status_project'] ?? ''), (string)($rpKpi['notify_result'] ?? ''));
 	}
 	$pm_show_kpi_result_btn = pm_project_allows_kpi_result_fill($db_Project, $project_id);
@@ -15420,12 +15426,18 @@ if ($op === 'add_project') {
 		$pm_apply_workflow_ui_lock = pm_plan_restricts_like_user($pm_status_now_h, $pm_notify_result_h);
 		$pm_lock_project_name = $pm_apply_workflow_ui_lock
 			|| ($edit_project_id > 0 && function_exists('pm_project_allows_kpi_result_fill') && pm_project_allows_kpi_result_fill($db_Project, (int)$edit_project_id));
+		// หน่วยแผนแก้ชื่อโครงการได้เสมอ (ยกเว้นยกเลิก/ปิดโครงการ ซึ่งล็อกด้านล่าง)
+		if (!empty($pm_is_plan_admin)) {
+			$pm_lock_project_name = false;
+		}
 		$pm_is_hard_lock = (!$pm_is_plan_admin && !in_array($pm_status_now_h, ['0','8'], true) && empty($pm_is_annual_plan_partial));
 		if (!empty($pm_operate_reply_sent_lock)) {
 			$pm_is_hard_lock = true;
 			$pm_lock_project_name = true;
 		}
-		$pm_include_meeting_lock = function_exists('pm_is_include_meeting_view_only')
+		// ล็อกดูอย่างเดียวเฉพาะฝั่งผู้ใช้ — หน่วยแผนแก้ไข/แจ้งผลได้ตอนอยู่ระหว่างพิจารณา งานแผน
+		$pm_include_meeting_lock = !(defined('PLAN_ADMIN') && PLAN_ADMIN)
+			&& function_exists('pm_is_include_meeting_view_only')
 			&& pm_is_include_meeting_view_only($pm_status_now_h, $pm_notify_result_h);
 		if (!empty($pm_include_meeting_lock)) {
 			$pm_is_hard_lock = true;
@@ -15798,13 +15810,13 @@ if ($op === 'add_project') {
 				<input type="text" name="name_project" id="name_project_input" class="form-control form-control-sm ml-2" required placeholder="กรอกชื่อโครงการ" style="min-width:300px; flex:1;" value="<?= htmlspecialchars($saved_pre['name_project'] ?? '', ENT_QUOTES, 'UTF-8') ?>"<?= !empty($pm_lock_project_name) ? ' readonly tabindex="-1"' : '' ?>>
 				<span id="name_project_req" class="text-danger">*</span>
 			</div>
-			<?php if (empty($pm_lock_project_name) && empty($pm_is_result_report_frozen)): ?>
+			<?php if ((empty($pm_lock_project_name) && empty($pm_is_result_report_frozen)) || (!empty($pm_is_plan_admin) && empty($pm_is_cancelled) && empty($pm_is_plan_closed_h))): ?>
 			<div class="d-flex align-items-center flex-wrap" style="gap: 1rem;">
-				<button type="button" class="btn btn-primary btn-sm" id="btnToggleHeaderEdit">
-					<i class="fa fa-edit mr-1"></i> เพิ่ม/แก้ไข
+				<button type="button" class="btn btn-warning btn-sm font-weight-bold" id="btnToggleHeaderEdit" title="แก้ไขชื่อโครงการ">
+					<i class="fa fa-edit"></i> แก้ไขชื่อโครงการ
 				</button>
 				<button type="submit" class="btn btn-success btn-sm pm-save-btn" id="btnHeaderSave" formnovalidate>
-					<i class="fa fa-save mr-1"></i> บันทึก
+					<i class="fa fa-save"></i> บันทึก
 				</button>
 			</div>
 			<?php endif ?>
@@ -16023,6 +16035,14 @@ if ($op === 'add_project') {
 					])
 					: '<span id="submitStatusBadgeTop" class="badge badge-pill px-3 py-2 ml-2 '.htmlspecialchars($pm_status_badge_cls, ENT_QUOTES, 'UTF-8').(empty($pm_show_status_badge) ? ' d-none' : '').'"><i class="fa '.htmlspecialchars($pm_status_badge_icon, ENT_QUOTES, 'UTF-8').' mr-1"></i> '.htmlspecialchars($pm_status_badge_txt, ENT_QUOTES, 'UTF-8').'</span>'
 				?>
+				<?php if (!empty($pm_is_plan_admin) && empty($pm_is_cancelled) && empty($pm_is_plan_closed_h) && $edit_project_id > 0): ?>
+					<button type="button"
+						class="btn btn-warning btn-sm font-weight-bold ml-2"
+						id="btnAdminEditProjectName"
+						title="แก้ไขชื่อโครงการ">
+						<i class="fa fa-edit"></i> แก้ไขชื่อโครงการ
+					</button>
+				<?php endif ?>
 				<?php if (in_array($pm_ab_hero_mod, ['cancelled', 'cancel_pending', 'changing'], true)): ?>
 				<?php elseif (!empty($pm_is_cancelled)): ?>
 				<?php elseif (!empty($pm_cancel_pending)): ?>
@@ -17365,11 +17385,11 @@ if ($op === 'add_project') {
 						// ซ่อนปุ่มบันทึกทั้งหมดในโหมดแสดงผล
 						saveBtns.forEach(function (b) { b.classList.add('d-none'); });
 
-						// ปุ่มหลัก: แสดงเป็น "แก้ไข" (เหลือง) เมื่อมีชื่อโครงการแล้ว
+						// ปุ่มหลัก: แสดงเป็น "แก้ไขชื่อโครงการ" เมื่อมีชื่อแล้ว
 						if (btnEdit) {
 							btnEdit.classList.remove('btn-primary');
-							btnEdit.classList.add('btn-pm-edit-orange');
-							btnEdit.innerHTML = '<i class="fa fa-edit mr-1"></i> แก้ไข';
+							btnEdit.classList.add('btn-warning');
+							btnEdit.innerHTML = '<i class="fa fa-edit"></i> แก้ไขชื่อโครงการ';
 						}
 					} else {
 						yearText.classList.add('d-none');
@@ -17394,13 +17414,37 @@ if ($op === 'add_project') {
 							saveBtns.forEach(function (b) { b.classList.remove('d-none'); });
 						}
 
-						// ปุ่มหลัก: กลับเป็น "ปิดการแก้ไข" (น้ำเงิน)
+						// ปุ่มหลัก: กลับเป็น "ปิดการแก้ไข"
 						if (btnEdit) {
-							btnEdit.classList.remove('btn-pm-edit-orange');
+							btnEdit.classList.remove('btn-warning');
 							btnEdit.classList.add('btn-primary');
-							btnEdit.innerHTML = '<i class="fa fa-times mr-1"></i> ปิดการแก้ไข';
+							btnEdit.innerHTML = '<i class="fa fa-times"></i> ปิดการแก้ไข';
 						}
 					}
+				}
+
+				function pmEnterProjectNameEdit(){
+					var nameInput = document.getElementById('name_project_input');
+					if (!nameInput) return;
+					window.PM_LOCK_PROJECT_NAME = false;
+					nameInput.readOnly = false;
+					nameInput.removeAttribute('tabindex');
+					nameInput.classList.remove('d-none');
+					var nameText = document.getElementById('name_project_text');
+					var nameReq = document.getElementById('name_project_req');
+					if (nameText) nameText.classList.add('d-none');
+					if (nameReq) nameReq.classList.remove('d-none');
+					document.querySelectorAll('.pm-save-btn').forEach(function(b){ b.classList.remove('d-none'); });
+					var btnEdit = document.getElementById('btnToggleHeaderEdit');
+					if (btnEdit) {
+						btnEdit.classList.remove('d-none');
+						btnEdit.classList.remove('btn-warning');
+						btnEdit.classList.add('btn-primary');
+						btnEdit.innerHTML = '<i class="fa fa-times"></i> ปิดการแก้ไข';
+					}
+					setHeaderMode('edit');
+					try { nameInput.focus(); nameInput.select(); } catch (e) {}
+					try { nameInput.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e2) {}
 				}
 
 				(function(){
@@ -17408,8 +17452,23 @@ if ($op === 'add_project') {
 					if (!btnHdr) return;
 					btnHdr.addEventListener('click', function(){
 						var nameInput = document.getElementById('name_project_input');
+						if (!nameInput) return;
 						var isCurrentlyView = nameInput.classList.contains('d-none');
-						setHeaderMode(isCurrentlyView ? 'edit' : 'view');
+						if (isCurrentlyView) {
+							pmEnterProjectNameEdit();
+						} else {
+							setHeaderMode('view');
+							btnHdr.classList.remove('btn-primary');
+							btnHdr.classList.add('btn-warning');
+							btnHdr.innerHTML = '<i class="fa fa-edit"></i> แก้ไขชื่อโครงการ';
+						}
+					});
+				})();
+				(function(){
+					var btnAdminName = document.getElementById('btnAdminEditProjectName');
+					if (!btnAdminName) return;
+					btnAdminName.addEventListener('click', function(){
+						pmEnterProjectNameEdit();
 					});
 				})();
 
@@ -17442,13 +17501,23 @@ if ($op === 'add_project') {
 
 				// ถ้ามีชื่อโครงการแล้ว ให้เริ่มต้นเป็นโหมดแสดงผล (และซ่อนปุ่มบันทึก)
 				var __hasName = (String((document.getElementById('name_project_input')?.value || '')).trim() !== '');
-				if (window.PM_RESULT_REPORT_LOCKED || window.PM_RESULT_REPORT_COMPLETE || window.PM_LOCK_PROJECT_NAME) {
+				var __adminCanEditName = !!document.getElementById('btnAdminEditProjectName') || !!document.getElementById('btnToggleHeaderEdit');
+				if ((window.PM_RESULT_REPORT_LOCKED || window.PM_RESULT_REPORT_COMPLETE || window.PM_LOCK_PROJECT_NAME) && !__adminCanEditName) {
 					setHeaderMode('view');
 					var __btnHdrEdit = document.getElementById('btnToggleHeaderEdit');
 					if (__btnHdrEdit) __btnHdrEdit.classList.add('d-none');
 					document.querySelectorAll('.pm-save-btn').forEach(function(b){ b.classList.add('d-none'); });
 				} else {
 					setHeaderMode(__hasName ? 'view' : 'edit');
+					if (__hasName) {
+						document.querySelectorAll('.pm-save-btn').forEach(function(b){ b.classList.add('d-none'); });
+						var __btnHdrEdit2 = document.getElementById('btnToggleHeaderEdit');
+						if (__btnHdrEdit2) {
+							__btnHdrEdit2.classList.remove('btn-primary');
+							__btnHdrEdit2.classList.add('btn-warning');
+							__btnHdrEdit2.innerHTML = '<i class="fa fa-edit"></i> แก้ไขชื่อโครงการ';
+						}
+					}
 				}
 				// เช็คเดือน/ปี: เดือน/ปี สิ้นสุดต้องไม่น้อยกว่าเดือน/ปี เริ่มต้น
 				document.getElementById('form-add-project').addEventListener('submit', function(e){
@@ -28560,12 +28629,12 @@ if ($op === 'add_project') {
 					'details' => $detailsOut,
 					'proposer_name' => $pm_chg_am_proposer_name,
 					'proposer_pos' => $pm_chg_am_proposer_pos,
-					'proposer_date' => $dateReq,
+					'proposer_date' => '',
 					'proposer_sig' => $pm_chg_am_proposer_sig,
 					'proposer_sig_alts' => $pm_chg_am_proposer_sig_alts,
 					'approver_name' => $apName,
 					'approver_pos' => $apPos,
-					'approver_date' => $apDate,
+					'approver_date' => '',
 					'approver_sig' => $apSig,
 					'approver_sig_alts' => $apSigAlts,
 					'esign_ref' => $__chgEsignRef,
@@ -29247,7 +29316,6 @@ if ($op === 'add_project') {
 									<?php endif; ?>
 									<div class="pm-am-sign-name" id="pmAmProposerName"><?= htmlspecialchars($pmAmDispProposer, ENT_QUOTES, 'UTF-8') ?></div>
 									<div class="pm-am-sign-pos" id="pmAmProposerPos"><?= htmlspecialchars(($pm_am_proposer_pos ?? '') !== '' ? $pm_am_proposer_pos : '........................', ENT_QUOTES, 'UTF-8') ?></div>
-									<div class="pm-am-sign-date" id="pmAmProposerDate"><?= htmlspecialchars(($pm_am_proposer_date ?? '') !== '' ? $pm_am_proposer_date : '....................', ENT_QUOTES, 'UTF-8') ?></div>
 								</div>
 
 								<div class="pm-am-sign-plain">
@@ -29258,7 +29326,6 @@ if ($op === 'add_project') {
 									<?php endif; ?>
 									<div class="pm-am-sign-name" id="pmAmApproverName"><?= htmlspecialchars($pmAmDispApprover, ENT_QUOTES, 'UTF-8') ?></div>
 									<div class="pm-am-sign-pos" id="pmAmApproverPos"><?= htmlspecialchars(($pm_approve_memo_approver_pos ?? '') !== '' ? $pm_approve_memo_approver_pos : '........................', ENT_QUOTES, 'UTF-8') ?></div>
-									<div class="pm-am-sign-date" id="pmAmApproverDate"><?= htmlspecialchars(!empty($pm_am_approver_date_only) ? $pm_am_approver_date_only : '....................', ENT_QUOTES, 'UTF-8') ?></div>
 								</div>
 							</div>
 						</div>
@@ -29506,11 +29573,11 @@ if ($op === 'add_project') {
 				budget_src: valText('#pmAmBudgetSrcVal'),
 				proposer_name: valText('#pmAmProposerName'),
 				proposer_pos: valText('#pmAmProposerPos'),
-				proposer_date: valText('#pmAmProposerDate'),
+				proposer_date: '',
 				proposer_sig: String($('#pmAmProposerSig').prop('src') || $('#pmAmProposerSig').attr('src') || ''),
 				approver_name: valText('#pmAmApproverName'),
 				approver_pos: valText('#pmAmApproverPos'),
-				approver_date: valText('#pmAmApproverDate'),
+				approver_date: '',
 				approver_sig: String($('#pmAmApproverSig').prop('src') || $('#pmAmApproverSig').attr('src') || '')
 			};
 
@@ -29655,7 +29722,6 @@ if ($op === 'add_project') {
 											<div class="pm-am-sign-col-meta">
 												<div class="pm-am-sign-name" id="pmChgAmProposerName">........................</div>
 												<div id="pmChgAmProposerPos">........................</div>
-												<div class="pm-am-sign-date" id="pmChgAmProposerDate">....................</div>
 											</div>
 										</div>
 									</div>
@@ -29671,7 +29737,6 @@ if ($op === 'add_project') {
 											<div class="pm-am-sign-col-meta">
 												<div class="pm-am-sign-name" id="pmChgAmApproverName">........................</div>
 												<div id="pmChgAmApproverPos">........................</div>
-												<div class="pm-am-sign-date" id="pmChgAmApproverDate">....................</div>
 											</div>
 										</div>
 									</div>
@@ -29780,10 +29845,8 @@ if ($op === 'add_project') {
 			pmChgSetText('pmChgAmReasonVal', data.reason, '…');
 			pmChgSetText('pmChgAmProposerName', data.proposer_name, '........................');
 			pmChgSetText('pmChgAmProposerPos', data.proposer_pos, '........................');
-			pmChgSetText('pmChgAmProposerDate', data.proposer_date || data.date, '....................');
 			pmChgSetText('pmChgAmApproverName', data.approver_name, '........................');
 			pmChgSetText('pmChgAmApproverPos', data.approver_pos, '........................');
-			pmChgSetText('pmChgAmApproverDate', data.approver_date, '....................');
 			pmChgRenderSig('pmChgAmProposerSigWrap', data.proposer_sig, data.proposer_sig_alts, 'ลายเซ็นผู้เสนอ');
 			pmChgRenderSig('pmChgAmApproverSigWrap', data.approver_sig, data.approver_sig_alts, 'ลายเซ็นผู้อนุมัติ');
 			pmChgSetText('pmChgAmEsignFooter', data.esign_footer, '');
@@ -29967,11 +30030,11 @@ if ($op === 'add_project') {
 				details_json: JSON.stringify(details),
 				proposer_name: valText('#pmChgAmProposerName'),
 				proposer_pos: valText('#pmChgAmProposerPos'),
-				proposer_date: valText('#pmChgAmProposerDate'),
+				proposer_date: '',
 				proposer_sig: String($('#pmChgAmProposerSigWrap img').prop('src') || $('#pmChgAmProposerSigWrap img').attr('src') || ''),
 				approver_name: valText('#pmChgAmApproverName'),
 				approver_pos: valText('#pmChgAmApproverPos'),
-				approver_date: valText('#pmChgAmApproverDate'),
+				approver_date: '',
 				approver_sig: String($('#pmChgAmApproverSigWrap img').prop('src') || $('#pmChgAmApproverSigWrap img').attr('src') || '')
 			};
 			try {
@@ -32035,6 +32098,8 @@ if ($project_group !== 'draft' && $project_group !== 'plan') {
 }
 $pm_status_filter = isset($_GET['status_filter']) ? trim((string)$_GET['status_filter']) : '';
 $pm_status_filter_options = [];
+$pm_unit_filter = isset($_GET['unit_filter']) ? trim((string)$_GET['unit_filter']) : '';
+$pm_unit_filter_list = [];
 $include_request_id = isset($_GET['include_request_id']) ? (int)$_GET['include_request_id'] : 0;
 $include_request_project_ids = [];
 $include_resubmit_certifiers_for_js = [];
@@ -32332,7 +32397,7 @@ $pm_ab_mod_order = [
 	'midyear' => 60, 'b1' => 70, 'b_fix' => 80, 'b2' => 90, 'b3' => 100,
 	'b4' => 110, 'b4_done' => 115, 'b5' => 120, 'changing' => 130, 'cancel_pending' => 140, 'cancelled' => 150,
 ];
-if (defined('PLAN_ADMIN') && PLAN_ADMIN && function_exists('pm_resolve_ab_status')) {
+if (function_exists('pm_resolve_ab_status')) {
 	if (!isset($GLOBALS['pm_list_ab_status_cache']) || !is_array($GLOBALS['pm_list_ab_status_cache'])) {
 		$GLOBALS['pm_list_ab_status_cache'] = [];
 	}
@@ -32390,6 +32455,81 @@ if (defined('PLAN_ADMIN') && PLAN_ADMIN && function_exists('pm_resolve_ab_status
 		}
 		$project_list_filtered = $__keep_by_status;
 	}
+}
+
+// ตัวเลือก/กรองหน่วยงาน (ชุดเดียวกับหน้าโครงการทั้งหมด)
+$__plan_unit_filter_groups = function_exists('getSetUnitSelectGroupsForPlan')
+	? getSetUnitSelectGroupsForPlan($db_Project)
+	: [];
+foreach ($__plan_unit_filter_groups as $__ginfo) {
+	foreach (($__ginfo['units'] ?? []) as $__u) {
+		if (!is_array($__u)) {
+			continue;
+		}
+		$__st = trim((string)($__u['status'] ?? '1'));
+		if ($__st !== '' && $__st !== '1') {
+			continue;
+		}
+		$__val = function_exists('planSetUnitOptionValue') ? planSetUnitOptionValue($__u) : (string)($__u['id'] ?? '');
+		$__nm = function_exists('planSetUnitOptionLabel')
+			? planSetUnitOptionLabel($__u)
+			: trim((string)($__u['name'] ?? ''));
+		if ($__val === '' || $__nm === '') {
+			continue;
+		}
+		$pm_unit_filter_list[] = ['code' => $__val, 'name' => $__nm];
+	}
+}
+if (empty($pm_unit_filter_list) && function_exists('getSetUnitListForPlan') && function_exists('planSetUnitOptionValue')) {
+	foreach (getSetUnitListForPlan($db_Project) as $__u) {
+		if (!is_array($__u)) {
+			continue;
+		}
+		$__val = planSetUnitOptionValue($__u);
+		$__nm = function_exists('planSetUnitOptionLabel')
+			? planSetUnitOptionLabel($__u)
+			: trim((string)($__u['name'] ?? ''));
+		if ($__val === '' || $__nm === '') {
+			continue;
+		}
+		$pm_unit_filter_list[] = ['code' => $__val, 'name' => $__nm];
+	}
+}
+$pm_unit_filter_keys = [];
+if ($pm_unit_filter !== '') {
+	$pm_unit_filter_keys[$pm_unit_filter] = true;
+	if (function_exists('planResolvePreProjectCodeUnit')) {
+		$__ufResolved = planResolvePreProjectCodeUnit($db_Project, $pm_unit_filter);
+		if ($__ufResolved !== '') {
+			$pm_unit_filter_keys[$__ufResolved] = true;
+		}
+	}
+	$__ufKnown = false;
+	foreach ($pm_unit_filter_list as $__uopt) {
+		if ((string)($__uopt['code'] ?? '') === $pm_unit_filter) {
+			$__ufKnown = true;
+			break;
+		}
+	}
+	if (!$__ufKnown) {
+		$pm_unit_filter = '';
+		$pm_unit_filter_keys = [];
+	}
+}
+if ($pm_unit_filter !== '' && !empty($pm_unit_filter_keys) && !empty($project_list_filtered)) {
+	$__keep_by_unit = [];
+	foreach ($project_list_filtered as $_pr) {
+		$_cu = trim((string)($_pr['code_unit'] ?? ''));
+		$_ok = ($_cu !== '' && isset($pm_unit_filter_keys[$_cu]));
+		if (!$_ok && $_cu !== '' && function_exists('planResolvePreProjectCodeUnit')) {
+			$_resolved = planResolvePreProjectCodeUnit($db_Project, $_cu);
+			$_ok = ($_resolved !== '' && isset($pm_unit_filter_keys[$_resolved]));
+		}
+		if ($_ok) {
+			$__keep_by_unit[] = $_pr;
+		}
+	}
+	$project_list_filtered = $__keep_by_unit;
 }
 
 // Fallback: รองรับการเรียงลำดับแบบ server-side (กรณี JS ไม่ทำงาน)
@@ -32482,6 +32622,12 @@ if ($is_unit_admin) {
 	}
 	if (!isset($pm_status_filter_options) || !is_array($pm_status_filter_options)) {
 		$pm_status_filter_options = [];
+	}
+	if (!isset($pm_unit_filter)) {
+		$pm_unit_filter = isset($_GET['unit_filter']) ? trim((string)$_GET['unit_filter']) : '';
+	}
+	if (!isset($pm_unit_filter_list) || !is_array($pm_unit_filter_list)) {
+		$pm_unit_filter_list = [];
 	}
 	if (!isset($year_list) || !is_array($year_list)) {
 		$year_list = [];
@@ -32576,6 +32722,12 @@ if ($is_unit_admin) {
 .pm-status-select{
 	width: 250px !important;
 	max-width: 280px;
+	font-weight: 800 !important;
+	font-size: .86rem !important;
+}
+.pm-unit-select{
+	width: 260px !important;
+	max-width: 320px;
 	font-weight: 800 !important;
 	font-size: .86rem !important;
 }
@@ -33357,17 +33509,8 @@ if ($is_unit_admin) {
 		<div class="d-flex align-items-center gap-2 pm-manage-toolbar">
 			<input type="text" id="projectListSearch" class="form-control form-control-sm" style="width:320px;" placeholder="<?= (defined('PLAN_ADMIN') && PLAN_ADMIN) ? 'ค้นหา: รหัส / ชื่อโครงการ / หน่วยงาน / Tags' : 'ค้นหา: รหัสโครงการ / ชื่อโครงการ / หน่วยงาน' ?>">
 			<div class="pm-year-select-wrap">
-				<?php
-				$pm_year_onchange = (defined('PLAN_ADMIN') && PLAN_ADMIN)
-					? 'pmManageListNavigate();'
-					: ("location = '?page=project_manage&years_select=' + encodeURIComponent(this.value) + '&project_group="
-						. htmlspecialchars((string)$project_group, ENT_QUOTES, 'UTF-8')
-						. "'"
-						. ($include_request_id > 0 ? " + '&include_request_id=" . (int)$include_request_id . "'" : '')
-						. ';');
-				?>
 				<select id="pmYearSelect" class="form-control form-control-sm ace-select pm-year-select"
-				onchange="<?= htmlspecialchars($pm_year_onchange, ENT_QUOTES, 'UTF-8') ?>">
+				onchange="pmManageListNavigate();">
 				<?php foreach ($year_list as $y): ?>
 					<option value="<?= htmlspecialchars($y['budget_year_name']) ?>" <?= ($years_select == $y['budget_year_name']) ? 'selected' : '' ?>>
 						<?= htmlspecialchars($y['budget_year_name']) ?>
@@ -33375,7 +33518,6 @@ if ($is_unit_admin) {
 				<?php endforeach ?>
 			</select>
 			</div>
-			<?php if (defined('PLAN_ADMIN') && PLAN_ADMIN): ?>
 			<div class="pm-year-select-wrap">
 				<select id="pmStatusFilter" class="form-control form-control-sm ace-select pm-year-select pm-status-select"
 					title="กรองตามสถานะ"
@@ -33388,20 +33530,35 @@ if ($is_unit_admin) {
 					<?php endforeach ?>
 				</select>
 			</div>
+			<div class="pm-year-select-wrap">
+				<select id="pmUnitFilter" class="form-control form-control-sm ace-select pm-year-select pm-unit-select"
+					title="กรองตามหน่วยงาน"
+					onchange="pmManageListNavigate();">
+					<option value="">ทั้งหมด — หน่วยงาน</option>
+					<?php foreach (($pm_unit_filter_list ?? []) as $_uf): ?>
+						<option value="<?= htmlspecialchars((string)($_uf['code'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+							<?= ($pm_unit_filter !== '' && $pm_unit_filter === (string)($_uf['code'] ?? '')) ? 'selected' : '' ?>>
+							<?= htmlspecialchars((string)($_uf['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>
+						</option>
+					<?php endforeach ?>
+				</select>
+			</div>
 			<script>
 			function pmManageListNavigate(){
 				var yEl = document.getElementById('pmYearSelect');
 				var sEl = document.getElementById('pmStatusFilter');
+				var uEl = document.getElementById('pmUnitFilter');
 				var y = yEl ? yEl.value : '';
 				var s = sEl ? sEl.value : '';
+				var unit = uEl ? uEl.value : '';
 				var u = '?page=project_manage&years_select=' + encodeURIComponent(y)
 					+ '&project_group=<?= htmlspecialchars($project_group, ENT_QUOTES, 'UTF-8') ?>'
 					+ '<?= $include_request_id > 0 ? '&include_request_id=' . (int)$include_request_id : '' ?>';
 				if (s) u += '&status_filter=' + encodeURIComponent(s);
+				if (unit) u += '&unit_filter=' + encodeURIComponent(unit);
 				window.location = u;
 			}
 			</script>
-			<?php endif ?>
 			<?php if ((defined('PLAN_ADMIN') && PLAN_ADMIN) && $project_group === 'plan'): ?>
 				<a href="?page=project_manage&op=add_project&years_select=<?= htmlspecialchars($years_select, ENT_QUOTES, 'UTF-8') ?>&project_group=plan&midyear=1"
 					class="btn btn-sm pm-btn-midyear">
@@ -33427,14 +33584,26 @@ if ($is_unit_admin) {
 				แสดงเฉพาะโครงการที่ผู้รับรองเลือกตีกลับ (คำขอ #<?= (int)$include_request_id ?>) — แก้ไขแล้วกด “ส่งร่างโครงการ” หรือ “ยืนยันการแก้ไข” ในหน้ารายละเอียดโครงการ
 			</div>
 		<?php endif ?>
+		<?php
+			$pm_list_tab_qs = '&years_select=' . rawurlencode((string)$years_select);
+			if ($pm_status_filter !== '') {
+				$pm_list_tab_qs .= '&status_filter=' . rawurlencode((string)$pm_status_filter);
+			}
+			if ($pm_unit_filter !== '') {
+				$pm_list_tab_qs .= '&unit_filter=' . rawurlencode((string)$pm_unit_filter);
+			}
+			if ($include_request_id > 0) {
+				$pm_list_tab_qs .= '&include_request_id=' . (int)$include_request_id;
+			}
+		?>
 		<div class="mb-3">
 			<div class="pm-group-switch">
 				<a class="pm-group-btn <?= $project_group === 'draft' ? 'pm-active-draft' : 'pm-inactive' ?>"
-					href="?page=project_manage&years_select=<?= htmlspecialchars($years_select, ENT_QUOTES, 'UTF-8') ?>&project_group=draft<?= $include_request_id > 0 ? '&include_request_id=' . (int)$include_request_id : '' ?>">
+					href="?page=project_manage&project_group=draft<?= htmlspecialchars($pm_list_tab_qs, ENT_QUOTES, 'UTF-8') ?>">
 					ร่างโครงการ
 				</a>
 				<a class="pm-group-btn <?= $project_group === 'plan' ? 'pm-active-plan' : 'pm-inactive' ?>"
-					href="?page=project_manage&years_select=<?= htmlspecialchars($years_select, ENT_QUOTES, 'UTF-8') ?>&project_group=plan<?= $include_request_id > 0 ? '&include_request_id=' . (int)$include_request_id : '' ?>">
+					href="?page=project_manage&project_group=plan<?= htmlspecialchars($pm_list_tab_qs, ENT_QUOTES, 'UTF-8') ?>">
 					แผนงานประจำปี
 				</a>
 			</div>
@@ -33675,11 +33844,7 @@ if ($is_unit_admin) {
 									&& pm_is_annual_plan_pre_operate($pm_row_status, $pm_row_notify_result);
 							}
 							if (defined('PLAN_ADMIN') && PLAN_ADMIN) {
-								$can_edit_row = true; // Plan(Admin): แก้ไขได้ทุกสถานะ
-								if (function_exists('pm_is_include_meeting_view_only')
-									&& pm_is_include_meeting_view_only($pm_row_status, $pm_row_notify_result)) {
-									$can_edit_row = false; // นำเข้าที่ประชุมแล้ว ยังไม่แจ้งผล → ดูอย่างเดียว
-								}
+								$can_edit_row = true; // Plan(Admin): แก้ไขได้ รวมสถานะอยู่ระหว่างพิจารณา งานแผน
 								if ($pm_plan_admin_confirm_fix) {
 									$can_edit_row = false; // ผู้ยื่นส่งกลับแล้ว → เปิดดูรายละเอียด (ไม่ใช่ปุ่มยืนยัน)
 								}
@@ -33781,7 +33946,7 @@ if ($is_unit_admin) {
 										<a href="?page=project_manage&op=add_project&project_id=<?= (int)($row['id'] ?? 0) ?>&years_select=<?= htmlspecialchars($years_select, ENT_QUOTES, 'UTF-8') ?><?= htmlspecialchars($pmKeepIncludeQs, ENT_QUOTES, 'UTF-8') ?>&back_to=<?= rawurlencode($pm_back_list) ?>"
 											class="btn <?= $pm_action_btn_cls ?> btn-xs<?= !$can_edit_row ? ' font-weight-bold' : '' ?>"
 											<?= $pm_action_title !== '' ? ' title="'.htmlspecialchars($pm_action_title, ENT_QUOTES, 'UTF-8').'"' : '' ?>>
-											<i class="fa <?= htmlspecialchars($pm_action_icon, ENT_QUOTES, 'UTF-8') ?><?= !$can_edit_row ? ' mr-1' : '' ?>"></i> <?= htmlspecialchars($pm_action_label, ENT_QUOTES, 'UTF-8') ?>
+											<i class="fa <?= htmlspecialchars($pm_action_icon, ENT_QUOTES, 'UTF-8') ?>"></i> <?= htmlspecialchars($pm_action_label, ENT_QUOTES, 'UTF-8') ?>
 										</a>
 										<?php endif; ?>
 										<?php if ($pm_row_status === '0' || (defined('PLAN_ADMIN') && PLAN_ADMIN)): ?>
@@ -33839,7 +34004,8 @@ if ($is_unit_admin) {
 												data-notify-budget-code="<?= htmlspecialchars((string)$pm_list_cb, ENT_QUOTES, 'UTF-8') ?>"
 												data-notify-budget-label="<?= htmlspecialchars((string)$pm_list_budget_src_lbl, ENT_QUOTES, 'UTF-8') ?>"
 												data-notify-budget-other="<?= htmlspecialchars((string)$pm_list_bo, ENT_QUOTES, 'UTF-8') ?>"
-												data-notify-budget-total="<?= htmlspecialchars((string)$budget, ENT_QUOTES, 'UTF-8') ?>">
+												data-notify-budget-total="<?= htmlspecialchars((string)$budget, ENT_QUOTES, 'UTF-8') ?>"
+												title="แจ้งผลการพิจารณาแผน">
 												<i class="fa fa-bullhorn"></i> แจ้งผล
 											</button>
 										<?php endif ?>

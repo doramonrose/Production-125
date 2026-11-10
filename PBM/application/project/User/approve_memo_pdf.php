@@ -166,11 +166,11 @@ $budget = $post('budget');
 $budget_src = $post('budget_src');
 $proposer_name = $post('proposer_name');
 $proposer_pos = $post('proposer_pos');
-$proposer_date = $post('proposer_date');
+$proposer_date = '';
 $proposer_sig = $post('proposer_sig');
 $approver_name = $post('approver_name');
 $approver_pos = $post('approver_pos');
-$approver_date = $post('approver_date');
+$approver_date = '';
 $approver_sig = $post('approver_sig');
 $year = $post('year');
 $reason = $post('reason');
@@ -362,7 +362,6 @@ $signHtmlChange = '
 				<td width="52%">
 					<div class="meta-line">' . $h($proposer_name !== '' ? $proposer_name : '........................') . '</div>
 					<div class="meta-line">' . $h($proposer_pos) . '</div>
-					<div class="meta-line">' . $h($proposer_date !== '' ? $proposer_date : '....................') . '</div>
 				</td>
 			</tr></table>
 		</div>
@@ -384,7 +383,6 @@ $signHtmlChange = '
 				<td width="52%">
 					<div class="meta-line">' . $h($approver_name !== '' ? $approver_name : '........................') . '</div>
 					<div class="meta-line">' . $h($approver_pos) . '</div>
-					<div class="meta-line">' . $h($approver_date !== '' ? $approver_date : '....................') . '</div>
 				</td>
 			</tr></table>
 		</div>
@@ -402,7 +400,7 @@ $pmPdfParenName = static function ($name) {
 	return $first === '(' ? $name : '(' . $name . ')';
 };
 
-$pdfSignLines = static function ($imgHtml, $name, $pos, $date, $approveAbove = false) {
+$pdfSignLines = static function ($imgHtml, $name, $pos, $approveAbove = false) {
 	$rows = '';
 	if ($approveAbove) {
 		$rows .= '<tr><td class="sign-line approve">อนุมัติ</td></tr>';
@@ -412,7 +410,6 @@ $pdfSignLines = static function ($imgHtml, $name, $pos, $date, $approveAbove = f
 	}
 	$rows .= '<tr><td class="sign-line">' . $name . '</td></tr>';
 	$rows .= '<tr><td class="sign-line">' . $pos . '</td></tr>';
-	$rows .= '<tr><td class="sign-line">' . $date . '</td></tr>';
 	return '<table class="sign-stack" width="100%" cellspacing="0" cellpadding="0">' . $rows . '</table>';
 };
 $signHtmlOperate = '
@@ -423,8 +420,7 @@ $signHtmlOperate = '
 		$pdfSignLines(
 			$proposerSigImg !== '' ? '<img class="sig-img" src="' . $h($proposerSigImg) . '" alt="" />' : '',
 			$h($pmPdfParenName($proposer_name)),
-			$h($proposer_pos !== '' ? $proposer_pos : '........................'),
-			$h($proposer_date !== '' ? $proposer_date : '....................')
+			$h($proposer_pos !== '' ? $proposer_pos : '........................')
 		) . '
 	</td>
 </tr>
@@ -435,7 +431,6 @@ $signHtmlOperate = '
 			$approverSigImg !== '' ? '<img class="sig-img" src="' . $h($approverSigImg) . '" alt="" />' : '',
 			$h($pmPdfParenName($approver_name)),
 			$h($approver_pos !== '' ? $approver_pos : '........................'),
-			$h($approver_date !== '' ? $approver_date : '....................'),
 			true
 		) . '
 	</td>

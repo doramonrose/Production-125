@@ -788,6 +788,47 @@ if ($op === 'save_data_consistency_kpi_project' && ($_SERVER['REQUEST_METHOD'] ?
 						<tbody>
 						<?php
 						if (!empty($overview_rows_filtered)) :
+							$pm_ov_rr_rejected_ids = [];
+							$pm_ov_chg_pending_ids = [];
+							$pm_ov_chg_unapplied_ids = [];
+							$pm_ov_cancel_maps = ['pending' => [], 'cancelled' => []];
+							$__ovIds = [];
+							$__ovRrPending = [];
+							foreach ($overview_rows_filtered as $__ovPr) {
+								$__ovPid = (int)($__ovPr['id'] ?? 0);
+								if ($__ovPid <= 0) {
+									continue;
+								}
+								$__ovIds[] = $__ovPid;
+								$__ovSub = trim((string)($__ovPr['result_report_submitted_at'] ?? ''));
+								$__ovDone = trim((string)($__ovPr['result_report_completed_at'] ?? ''));
+								if ($__ovSub !== '' && $__ovDone === '') {
+									$__ovRrPending[] = $__ovPid;
+								}
+							}
+							if (function_exists('pm_load_pending_change_project_ids') && !empty($__ovIds)) {
+								$pm_ov_chg_pending_ids = pm_load_pending_change_project_ids($db_Project, $__ovIds);
+								$pm_ov_chg_unapplied_ids = function_exists('pm_load_unapplied_change_project_ids')
+									? pm_load_unapplied_change_project_ids($db_Project, $__ovIds)
+									: [];
+							}
+							if (function_exists('pm_load_cancel_status_maps') && !empty($__ovIds)) {
+								$pm_ov_cancel_maps = pm_load_cancel_status_maps($db_Project, $__ovIds);
+							}
+							if (!empty($__ovRrPending)) {
+								$__ovRrIn = implode(',', array_map('intval', array_unique($__ovRrPending)));
+								$qOvRrRej = @mysqli_query(
+									$db_Project,
+									"SELECT DISTINCT project_id FROM project_result_report_certifier_decision
+									 WHERE project_id IN (" . $__ovRrIn . ") AND decision='rejected'"
+								);
+								while ($qOvRrRej && ($__ovRrj = mysqli_fetch_assoc($qOvRrRej))) {
+									$__ovRid = (int)($__ovRrj['project_id'] ?? 0);
+									if ($__ovRid > 0) {
+										$pm_ov_rr_rejected_ids[$__ovRid] = true;
+									}
+								}
+							}
 							foreach ($overview_rows_filtered as $i => $row) :
 								$pid_ov = (int)($row['id'] ?? 0);
 								$head_name = $getHeadNameOv($pid_ov);
@@ -816,8 +857,21 @@ if ($op === 'save_data_consistency_kpi_project' && ($_SERVER['REQUEST_METHOD'] ?
 								$budget = (float)($row['budget_total'] ?? 0);
 								$disb = (float)($row['disburse_total'] ?? 0);
 								$st = (string)($row['status_project'] ?? '0');
+								// ใช้ extra ชุดเดียวกับหน้ารายการโครงการของฉัน ให้ป้ายสถานะตรงกัน
 								$pm_ab_ov = function_exists('pm_resolve_ab_status')
-									? pm_resolve_ab_status($row, ['db' => $db_Project])
+									? pm_resolve_ab_status($row, [
+										'db' => $db_Project,
+										'user_fix_note' => trim((string)($row['user_fix_note'] ?? '')),
+										'operate_reply_note' => trim((string)($row['operate_submitter_reply_note'] ?? '')),
+										'report_submitted_at' => trim((string)($row['result_report_submitted_at'] ?? '')),
+										'report_completed_at' => trim((string)($row['result_report_completed_at'] ?? '')),
+										'report_plan_closed_at' => trim((string)($row['result_report_plan_closed_at'] ?? '')),
+										'report_rejected' => !empty($pm_ov_rr_rejected_ids[$pid_ov]),
+										'cancelled' => !empty($pm_ov_cancel_maps['cancelled'][$pid_ov]),
+										'cancel_pending' => !empty($pm_ov_cancel_maps['pending'][$pid_ov]),
+										'change_pending' => !empty($pm_ov_chg_pending_ids[$pid_ov]),
+										'change_wait_apply' => !empty($pm_ov_chg_unapplied_ids[$pid_ov]),
+									])
 									: [
 										'label' => '-',
 										'mod' => 'unknown',
