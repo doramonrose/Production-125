@@ -89,8 +89,21 @@ if (!function_exists('project_all_execute_save_project')) {
 			$st_lock = @mysqli_query($db_Project, "SELECT status_project FROM pre_project WHERE id='" . (int)$project_id . "' LIMIT 1");
 			$rw_lock = $st_lock ? mysqli_fetch_assoc($st_lock) : null;
 			$stNow = $rw_lock ? (string)($rw_lock['status_project'] ?? '') : '';
+			$unitAdminCanEditWaiting = false;
+			if ($rw_lock && $stNow === '2' && function_exists('getPreProjectID') && function_exists('staffIsUnitAdminOfProjectMainUnit')) {
+				$preOwn = getPreProjectID($db_Project, (int)$project_id);
+				if (is_array($preOwn) && (int)($preOwn['midyear_request'] ?? 0) !== 1) {
+					$unitAdminCanEditWaiting = staffIsUnitAdminOfProjectMainUnit(
+						$db_Project,
+						$preOwn,
+						(int)$staff_insert,
+						(string)($r_staff['code'] ?? ''),
+						(string)($r_staff['unit_code'] ?? '')
+					);
+				}
+			}
 
-			if ($rw_lock && ($stNow !== '0' && $stNow !== '8') && !(defined('PLAN_ADMIN') && PLAN_ADMIN)) {
+			if ($rw_lock && ($stNow !== '0' && $stNow !== '8') && !(defined('PLAN_ADMIN') && PLAN_ADMIN) && !$unitAdminCanEditWaiting) {
 				$allowByIncludeRequest = false;
 				if ($include_request_id > 0 && function_exists('ensureIncludeRequestTables')) {
 					ensureIncludeRequestTables($db_Project);

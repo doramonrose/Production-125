@@ -4784,8 +4784,25 @@ function getPreProjectID($db_connection, $id)
     }
 }
 
+/** Admin หน่วยงานที่มีสิทธิ์บนหน่วยงานหลักของโครงการนี้เท่านั้น */
+function staffIsUnitAdminOfProjectMainUnit($db_Project, array $pre, $staff_id, $staff_code = '', $staff_unit_code = ''): bool
+{
+    if (defined('PLAN_ADMIN') && PLAN_ADMIN) {
+        return false;
+    }
+    $staff_id = (int) $staff_id;
+    if ($staff_id <= 0 || !$db_Project) {
+        return false;
+    }
+    if (!function_exists('isUnitAdmin') || !isUnitAdmin($db_Project, $staff_code, $staff_unit_code, $staff_id)) {
+        return false;
+    }
+    return function_exists('staffMatchesProjectMainUnitForInclude')
+        && staffMatchesProjectMainUnitForInclude($db_Project, $pre, $staff_id, (string) $staff_unit_code);
+}
+
 /** สิทธิ์แก้ฟิลด์ร่างยาว (reson / result / objective) ของ pre_project */
-function staffCanEditPreProjectRichFields($db_Project, $project_id, $staff_id, $staff_code = '', $staff_unit_code = '')
+function staffCanEditPreProjectRichFields($db_Project, $project_id, $staff_id, $staff_code = '', $staff_unit_code = '', $extraStatuses = [])
 {
     // โหมด Admin ของฝั่ง Plan: แก้ไขได้ทุกโครงการ
     if (defined('PLAN_ADMIN') && PLAN_ADMIN) {
@@ -4800,9 +4817,23 @@ function staffCanEditPreProjectRichFields($db_Project, $project_id, $staff_id, $
     if (!$pre || !is_array($pre)) {
         return false;
     }
-    // แก้ไขได้เฉพาะ: 0=ร่าง, 8=ตีกลับให้แก้ไข
+    // แก้ไขได้: 0=ร่าง, 8=ตีกลับให้แก้ไข และสถานะที่ผู้เรียกระบุเพิ่ม (เช่น 2=รอส่งตรวจสอบ สำหรับยกเลิกการส่ง)
     $stNow = (string)($pre['status_project'] ?? '');
-    if ($stNow !== '0' && $stNow !== '8') {
+    // Admin หน่วยงานแก้/ยกเลิก/ลบ โครงการที่รอส่งตรวจสอบได้ เฉพาะหน่วยงานหลักของตน
+    if ($stNow === '2'
+        && (int)($pre['midyear_request'] ?? 0) !== 1
+        && function_exists('staffIsUnitAdminOfProjectMainUnit')
+        && staffIsUnitAdminOfProjectMainUnit($db_Project, $pre, $staff_id, $staff_code, $staff_unit_code)) {
+        return true;
+    }
+    $allowedStatuses = ['0', '8'];
+    foreach ((array)$extraStatuses as $extraStatus) {
+        $extraStatus = (string)$extraStatus;
+        if ($extraStatus !== '' && !in_array($extraStatus, $allowedStatuses, true)) {
+            $allowedStatuses[] = $extraStatus;
+        }
+    }
+    if (!in_array($stNow, $allowedStatuses, true)) {
         return false;
     }
     if ((int)($pre['staff_insert'] ?? 0) === $staff_id) {
@@ -4823,10 +4854,17 @@ function staffCanEditPreProjectRichFields($db_Project, $project_id, $staff_id, $
             return true;
         }
     }
-    if (isUnitAdmin($db_Project, $staff_code, $staff_unit_code, $staff_id)
-        && function_exists('staffMatchesProjectUnitAdminScope')
-        && staffMatchesProjectUnitAdminScope($db_Project, $pre, $staff_id, $staff_code, $staff_unit_code)) {
-        return true;
+    if (isUnitAdmin($db_Project, $staff_code, $staff_unit_code, $staff_id)) {
+        if ($stNow === '2') {
+            if ((int)($pre['midyear_request'] ?? 0) !== 1
+                && function_exists('staffMatchesProjectMainUnitForInclude')
+                && staffMatchesProjectMainUnitForInclude($db_Project, $pre, $staff_id, (string)$staff_unit_code)) {
+                return true;
+            }
+        } elseif (function_exists('staffMatchesProjectUnitAdminScope')
+            && staffMatchesProjectUnitAdminScope($db_Project, $pre, $staff_id, $staff_code, $staff_unit_code)) {
+            return true;
+        }
     }
     return false;
 }

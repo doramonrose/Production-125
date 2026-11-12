@@ -125,6 +125,27 @@ if (!function_exists('pm_can_edit_full_or_plan')) {
 	}
 }
 
+/** สถานะแก้ไขได้ตามปกติ หรือ Admin หน่วยงานหลักตอนรอส่งตรวจสอบ */
+if (!function_exists('pm_allow_edit_for_actor')) {
+	function pm_allow_edit_for_actor($db_Project, $project_id, $staff_id, $staff_code, $staff_unit_code, $status_now, $notify_result, $fix_note = ''): bool
+	{
+		if (pm_can_edit_full_or_plan($status_now, $notify_result, $fix_note)) {
+			return true;
+		}
+		if ((string)$status_now !== '2' || (int)$project_id <= 0) {
+			return false;
+		}
+		if (!function_exists('getPreProjectID') || !function_exists('staffIsUnitAdminOfProjectMainUnit')) {
+			return false;
+		}
+		$pre = getPreProjectID($db_Project, (int)$project_id);
+		if (!$pre || !is_array($pre) || (int)($pre['midyear_request'] ?? 0) === 1) {
+			return false;
+		}
+		return staffIsUnitAdminOfProjectMainUnit($db_Project, $pre, (int)$staff_id, (string)$staff_code, (string)$staff_unit_code);
+	}
+}
+
 /**
  * จำกัดฟิลด์เมื่อเป็นแผนปฏิบัติการประจำปี (บรรจุแผนแล้ว ยังไม่ขอดำเนินการ)
  * ขั้นขอบรรจุที่ถูกตีกลับ / แผนแจ้งผลให้แก้ไข — ไม่จำกัดฟิลด์
@@ -173,7 +194,7 @@ if (!function_exists('pm_staff_can_save_allowed_project_content')) {
 		if (function_exists('pm_get_project_user_fix_note')) {
 			$fixNote = pm_get_project_user_fix_note($db_Project, $project_id);
 		}
-		return pm_can_edit_full_or_plan($status_now, $notify_result_now, $fixNote);
+		return pm_allow_edit_for_actor($db_Project, $project_id, $staff_id, $staff_code, $staff_unit_code, $status_now, $notify_result_now, $fixNote);
 	}
 }
 
@@ -3342,7 +3363,7 @@ if ($op === 'save_data_activity_project_ajax') {
 	}
 	$status_now = pm_get_project_status_now($db_Project, $project_id);
 	$notify_result_now = pm_get_project_notify_result($db_Project, $project_id);
-	if (!pm_can_edit_full_or_plan($status_now, $notify_result_now, function_exists('pm_get_project_user_fix_note') ? pm_get_project_user_fix_note($db_Project, $project_id) : '')) {
+	if (!pm_allow_edit_for_actor($db_Project, $project_id, $sid, $staff_code, $unit_code, $status_now, $notify_result_now, function_exists('pm_get_project_user_fix_note') ? pm_get_project_user_fix_note($db_Project, $project_id) : '')) {
 		echo json_encode(['ok' => 0, 'msg' => 'สถานะโครงการนี้ไม่อนุญาตให้แก้ไข'], JSON_UNESCAPED_UNICODE);
 		exit;
 	}
@@ -3546,6 +3567,14 @@ if ($op === 'render_activity_table') {
 	}
 	if (pm_admin_can_edit_activity_budget($db_Project, (int)$project_id)) {
 		$is_locked_project = false;
+	}
+	if (!empty($is_locked_project) && ($stNow ?? '') === '2' && function_exists('staffIsUnitAdminOfProjectMainUnit') && function_exists('getPreProjectID')) {
+		$preOwn = getPreProjectID($db_Project, (int)$project_id);
+		if (is_array($preOwn)
+			&& (int)($preOwn['midyear_request'] ?? 0) !== 1
+			&& staffIsUnitAdminOfProjectMainUnit($db_Project, $preOwn, $sid, $staff_code, $unit_code)) {
+			$is_locked_project = false;
+		}
 	}
 	if (function_exists('pm_project_is_result_report_plan_closed')
 		&& pm_project_is_result_report_plan_closed($db_Project, (int)$project_id)) {
@@ -3862,7 +3891,7 @@ if ($op === 'save_activity_budget_item_ajax') {
 	}
 	$status_now = pm_get_project_status_now($db_Project, $project_id);
 	$notify_result_now = pm_get_project_notify_result($db_Project, $project_id);
-	if (!pm_can_edit_full_or_plan($status_now, $notify_result_now, function_exists('pm_get_project_user_fix_note') ? pm_get_project_user_fix_note($db_Project, $project_id) : '')) {
+	if (!pm_allow_edit_for_actor($db_Project, $project_id, $sid, $staff_code, $unit_code, $status_now, $notify_result_now, function_exists('pm_get_project_user_fix_note') ? pm_get_project_user_fix_note($db_Project, $project_id) : '')) {
 		echo json_encode(['ok' => 0, 'msg' => 'สถานะโครงการนี้ไม่อนุญาตให้แก้ไข'], JSON_UNESCAPED_UNICODE);
 		exit;
 	}
@@ -4026,7 +4055,7 @@ if ($op === 'save_activity_budget_plan_ajax') {
 	}
 	$status_now = pm_get_project_status_now($db_Project, $project_id);
 	$notify_result_now = pm_get_project_notify_result($db_Project, $project_id);
-	if (!pm_can_edit_full_or_plan($status_now, $notify_result_now, function_exists('pm_get_project_user_fix_note') ? pm_get_project_user_fix_note($db_Project, $project_id) : '')) {
+	if (!pm_allow_edit_for_actor($db_Project, $project_id, $sid, $staff_code, $unit_code, $status_now, $notify_result_now, function_exists('pm_get_project_user_fix_note') ? pm_get_project_user_fix_note($db_Project, $project_id) : '')) {
 		echo json_encode(['ok' => 0, 'msg' => 'สถานะโครงการนี้ไม่อนุญาตให้แก้ไข'], JSON_UNESCAPED_UNICODE);
 		exit;
 	}
@@ -5429,6 +5458,14 @@ if ($op === 'render_budget_table') {
 	}
 	if (pm_admin_can_edit_activity_budget($db_Project, (int)$project_id)) {
 		$is_locked_project = false;
+	}
+	if (!empty($is_locked_project) && ($stNow ?? '') === '2' && function_exists('staffIsUnitAdminOfProjectMainUnit') && function_exists('getPreProjectID')) {
+		$preOwn = getPreProjectID($db_Project, (int)$project_id);
+		if (is_array($preOwn)
+			&& (int)($preOwn['midyear_request'] ?? 0) !== 1
+			&& staffIsUnitAdminOfProjectMainUnit($db_Project, $preOwn, $sid, $staff_code, $unit_code)) {
+			$is_locked_project = false;
+		}
 	}
 	if (function_exists('pm_project_is_result_report_plan_closed')
 		&& pm_project_is_result_report_plan_closed($db_Project, (int)$project_id)) {
@@ -7133,7 +7170,7 @@ if ($op === 'save_section2_field') {
 		}
 		$status_now = pm_get_project_status_now($db_Project, $project_id);
 		$notify_result_now = pm_get_project_notify_result($db_Project, $project_id);
-		if (!pm_can_edit_full_or_plan($status_now, $notify_result_now, function_exists('pm_get_project_user_fix_note') ? pm_get_project_user_fix_note($db_Project, $project_id) : '')) {
+		if (!pm_allow_edit_for_actor($db_Project, $project_id, $sid, $staff_code, $unit_code, $status_now, $notify_result_now, function_exists('pm_get_project_user_fix_note') ? pm_get_project_user_fix_note($db_Project, $project_id) : '')) {
 			pm_json_exit(['ok' => 0, 'msg' => 'สถานะโครงการนี้ไม่อนุญาตให้แก้ไข']);
 		}
 		if (pm_plan_restricts_like_user($status_now, $notify_result_now) && !in_array($field, ['reson', 'result', 'midyear_reason'], true)) {
@@ -7203,7 +7240,7 @@ if ($op === 'save_section6_fields') {
 		}
 	$status_now = pm_get_project_status_now($db_Project, $project_id);
 	$notify_result_now = pm_get_project_notify_result($db_Project, $project_id);
-	if (!pm_can_edit_full_or_plan($status_now, $notify_result_now, function_exists('pm_get_project_user_fix_note') ? pm_get_project_user_fix_note($db_Project, $project_id) : '')) {
+	if (!pm_allow_edit_for_actor($db_Project, $project_id, $sid, $staff_code, $unit_code, $status_now, $notify_result_now, function_exists('pm_get_project_user_fix_note') ? pm_get_project_user_fix_note($db_Project, $project_id) : '')) {
 		pm_json_exit(['ok' => 0, 'msg' => 'สถานะโครงการนี้ไม่อนุญาตให้แก้ไข']);
 	}
 
@@ -7286,7 +7323,7 @@ if ($op === 'save_general_info_ajax') {
 		}
 		$status_now = pm_get_project_status_now($db_Project, $project_id);
 		$notify_result_now = pm_get_project_notify_result($db_Project, $project_id);
-		if (!pm_can_edit_full_or_plan($status_now, $notify_result_now, function_exists('pm_get_project_user_fix_note') ? pm_get_project_user_fix_note($db_Project, $project_id) : '')) {
+		if (!pm_allow_edit_for_actor($db_Project, $project_id, $sid, $staff_code, $unit_code, $status_now, $notify_result_now, function_exists('pm_get_project_user_fix_note') ? pm_get_project_user_fix_note($db_Project, $project_id) : '')) {
 			pm_json_exit(['ok' => 0, 'msg' => 'สถานะโครงการนี้ไม่อนุญาตให้แก้ไข']);
 		}
 
@@ -7792,7 +7829,7 @@ if ($op === 'recall_submit_draft_ajax') {
 				}
 			}
 		}
-		if ($sid <= 0 || !function_exists('staffCanEditPreProjectRichFields') || !staffCanEditPreProjectRichFields($db_Project, $project_id, $sid, $staff_code, $unit_code)) {
+		if ($sid <= 0 || !function_exists('staffCanEditPreProjectRichFields') || !staffCanEditPreProjectRichFields($db_Project, $project_id, $sid, $staff_code, $unit_code, ['2'])) {
 			echo json_encode(['ok' => 0, 'msg' => 'ไม่มีสิทธิ์ยกเลิกการส่งโครงการนี้'], JSON_UNESCAPED_UNICODE);
 			exit;
 		}
@@ -11255,7 +11292,7 @@ if ($op === 'delete_draft_project_ajax') {
 		}
 
 		$isPlanAdminDelete = defined('PLAN_ADMIN') && PLAN_ADMIN;
-		$chk = @mysqli_query($db_Project, "SELECT id, year_project, code_pre_project, name_project, code_unit, status_project, status, notify_result, staff_insert FROM pre_project WHERE id='".(int)$project_id."' LIMIT 1");
+		$chk = @mysqli_query($db_Project, "SELECT id, year_project, code_pre_project, name_project, code_unit, status_project, status, notify_result, staff_insert, midyear_request FROM pre_project WHERE id='".(int)$project_id."' LIMIT 1");
 		$row = $chk ? mysqli_fetch_assoc($chk) : null;
 		if (!$row) {
 			echo json_encode(['ok' => 0, 'msg' => 'ไม่พบโครงการ'], JSON_UNESCAPED_UNICODE);
@@ -11265,8 +11302,13 @@ if ($op === 'delete_draft_project_ajax') {
 			echo json_encode(['ok' => 0, 'msg' => 'โครงการนี้ถูกลบแล้ว'], JSON_UNESCAPED_UNICODE);
 			exit;
 		}
-		if (!$isPlanAdminDelete && (string)($row['status_project'] ?? '') !== '0') {
-			echo json_encode(['ok' => 0, 'msg' => 'ลบได้เฉพาะโครงการสถานะร่างเท่านั้น'], JSON_UNESCAPED_UNICODE);
+		$unitAdminDeleteWaiting = !$isPlanAdminDelete
+			&& (string)($row['status_project'] ?? '') === '2'
+			&& (int)($row['midyear_request'] ?? 0) !== 1
+			&& function_exists('staffIsUnitAdminOfProjectMainUnit')
+			&& staffIsUnitAdminOfProjectMainUnit($db_Project, $row, $sid, $staff_code, $unit_code);
+		if (!$isPlanAdminDelete && (string)($row['status_project'] ?? '') !== '0' && !$unitAdminDeleteWaiting) {
+			echo json_encode(['ok' => 0, 'msg' => 'ลบได้เฉพาะโครงการสถานะร่าง หรือโครงการของหน่วยงานตนเองที่รอส่งตรวจสอบ'], JSON_UNESCAPED_UNICODE);
 			exit;
 		}
 		@mysqli_query($db_Project, "CREATE TABLE IF NOT EXISTS project_delete_log (
@@ -14271,8 +14313,12 @@ if ($op === 'add_project') {
 			display: none !important;
 		}
         .pm-wizard.pm-admin-activity-budget-edit #activity-table-wrap [data-action="edit-activity"],
-        .pm-wizard.pm-admin-activity-budget-edit #budget-table-wrap [data-action="budget-item-edit"]{
+        .pm-wizard.pm-admin-activity-budget-edit #budget-table-wrap [data-action="budget-item-edit"],
+        .pm-wizard.pm-admin-activity-budget-edit #budget-table-wrap [data-action="budget-items"],
+        .pm-wizard.pm-admin-activity-budget-edit #budget-table-wrap [data-action="budget-plan"]{
             display: inline-flex !important;
+            pointer-events: auto !important;
+            opacity: 1 !important;
         }
 		/* แผนปฏิบัติการประจำปี (บรรจุแผนแล้วยังไม่ขอดำเนินการ): ซ่อนเฉพาะส่วนที่ยังห้ามแก้ */
 		.pm-wizard.pm-annual-plan-partial-lock [data-kpi-goal-action],
@@ -15515,6 +15561,20 @@ if ($op === 'add_project') {
 			$pm_is_hard_lock = true;
 			$pm_is_result_report_frozen = true;
 		}
+		$pm_unit_admin_edit_waiting = !$pm_is_plan_admin
+			&& $pm_status_now_h === '2'
+			&& empty($pm_is_midyear)
+			&& empty($pm_is_cancelled)
+			&& empty($pm_is_plan_closed_h)
+			&& $edit_project_id > 0
+			&& is_array($saved_pre)
+			&& function_exists('staffIsUnitAdminOfProjectMainUnit')
+			&& staffIsUnitAdminOfProjectMainUnit($db_Project, $saved_pre, (int)$staff_id, (string)$staff_code, (string)$code_unit);
+		if (!empty($pm_unit_admin_edit_waiting)) {
+			$pm_is_hard_lock = false;
+			$pm_lock_project_name = false;
+			$pm_hide_structure_edit_btns = false;
+		}
 		// ตัดแถบขั้นตอนด้านบนออกแล้ว ใช้เครื่องหมาย * + ข้อความเตือนในแต่ละส่วนแทน
 		$pm_hide_add_stepper = true;
 		$pm_show_section_required_hints = ($edit_project_id <= 0)
@@ -15533,6 +15593,7 @@ if ($op === 'add_project') {
 		<input type="hidden" id="status_project_now" value="<?= htmlspecialchars((string)($saved_pre['status_project'] ?? '0'), ENT_QUOTES, 'UTF-8') ?>">
 		<script>
 			window.PM_PLAN_ADMIN = <?= $pm_is_plan_admin ? 'true' : 'false' ?>;
+			window.PM_UNIT_ADMIN_OWN_EDIT = <?= !empty($pm_unit_admin_edit_waiting) ? 'true' : 'false' ?>;
             window.PM_ADMIN_EDIT_ACTIVITY_BUDGET = <?= !empty($pm_admin_edit_activity_budget) ? 'true' : 'false' ?>;
 			window.PM_CAN_FILL_PROJECT_RESULTS = <?= !empty($pm_can_fill_project_results) ? 'true' : 'false' ?>;
 			window.PM_CAN_EDIT_PROJECT_RESULTS = <?= !empty($pm_can_edit_project_results) ? 'true' : 'false' ?>;
@@ -15647,7 +15708,6 @@ if ($op === 'add_project') {
 				$pm_can_submit_h = ($edit_project_id > 0) && $pm_all_done_h && ($pm_status_now_h === '0') && empty($pm_is_midyear) && empty($pm_is_operate_returned_partial);
 				// User ยกเลิกส่งร่าง (2→0) เมื่อยังไม่ถูกส่งต่อผู้พิจารณา
 				$pm_can_recall_submit_h = ($edit_project_id > 0)
-					&& !$pm_is_plan_admin
 					&& empty($pm_is_midyear)
 					&& ($pm_status_now_h === '2');
 				// Admin หน่วย ยกเลิกส่งผู้พิจารณา (3→2) เมื่อผู้พิจารณายังไม่กดอะไร
@@ -15917,6 +15977,20 @@ if ($op === 'add_project') {
 						$pm_hide_structure_edit_btns = true;
 						$pm_is_hard_lock = true;
 					}
+					$pm_unit_admin_edit_waiting = !$pm_is_plan_admin
+						&& $pm_status_now_h === '2'
+						&& empty($pm_is_midyear)
+						&& empty($pm_is_cancelled)
+						&& empty($pm_is_plan_closed_h)
+						&& $edit_project_id > 0
+						&& is_array($saved_pre)
+						&& function_exists('staffIsUnitAdminOfProjectMainUnit')
+						&& staffIsUnitAdminOfProjectMainUnit($db_Project, $saved_pre, (int)$staff_id, (string)$staff_code, (string)$code_unit);
+					if (!empty($pm_unit_admin_edit_waiting)) {
+						$pm_is_hard_lock = false;
+						$pm_lock_project_name = false;
+						$pm_hide_structure_edit_btns = false;
+					}
 					$pm_has_user_fix_confirmed = (trim((string)($saved_pre['user_fix_note'] ?? '')) !== '');
 					// ผู้ใช้จะเห็นปุ่ม "ขออนุมัติดำเนินโครงการ" ก็ต่อเมื่อ Plan Admin "บรรจุแผน" แล้วเท่านั้น
 					// เงื่อนไข: status_project = 4 (นำเข้าที่ประชุม/บรรจุแผน) และผลการพิจารณา = บรรจุแผน
@@ -15988,7 +16062,7 @@ if ($op === 'add_project') {
 				<?php endif ?>
 				<?php if (!empty($pm_can_recall_submit_h)): ?>
 					<button type="button"
-						class="btn btn-outline-warning btn-lg font-weight-bold px-4 ml-2"
+						class="btn btn-lg font-weight-bold px-4 ml-2 pm-btn-recall"
 						data-action="recall-submit-draft"
 						data-id="<?= (int)$edit_project_id ?>"
 						title="ยกเลิกการส่งกลับเป็นร่าง เพื่อแก้ไขแล้วส่งใหม่">
@@ -15997,7 +16071,7 @@ if ($op === 'add_project') {
 				<?php endif ?>
 				<?php if (!empty($pm_can_recall_include_h)): ?>
 					<button type="button"
-						class="btn btn-outline-warning btn-lg font-weight-bold px-4 ml-2"
+						class="btn btn-lg font-weight-bold px-4 ml-2 pm-btn-recall"
 						data-action="recall-include-send"
 						data-id="<?= (int)$edit_project_id ?>"
 						title="ยกเลิกการส่งผู้พิจารณา กลับเป็นรอส่งตรวจสอบ">
@@ -17179,7 +17253,7 @@ if ($op === 'add_project') {
 					var includeMeetingLock = !!window.PM_INCLUDE_MEETING_LOCK;
 					var planFixResubmitLock = !!window.PM_PLAN_FIX_RESUBMIT_LOCK;
 					var operateReplyLock = !!window.PM_OPERATE_REPLY_LOCK;
-					var canEditGeneral = !reportFrozen && !operateApproved && !includeMeetingLock && !planFixResubmitLock && !operateReplyLock && (!!window.PM_PLAN_ADMIN || (stNowGeneral !== '1' && stNowGeneral !== '2' && stNowGeneral !== '3' && stNowGeneral !== '4'));
+					var canEditGeneral = !reportFrozen && !operateApproved && !includeMeetingLock && !planFixResubmitLock && !operateReplyLock && (!!window.PM_PLAN_ADMIN || !!window.PM_UNIT_ADMIN_OWN_EDIT || (stNowGeneral !== '1' && stNowGeneral !== '2' && stNowGeneral !== '3' && stNowGeneral !== '4'));
 					var generalBtnTitle = reportFrozen
 						? 'รอตรวจสอบรายงานผล แก้ไขไม่ได้จนกว่าจะถูกตีกลับ'
 						: (includeMeetingLock
@@ -21423,7 +21497,7 @@ if ($op === 'add_project') {
 					<?php endif ?>
 					<?php if (!empty($pm_can_recall_submit_h)): ?>
 						<button type="button"
-							class="btn btn-outline-warning btn-lg font-weight-bold px-4 ml-2"
+							class="btn btn-lg font-weight-bold px-4 ml-2 pm-btn-recall"
 							data-action="recall-submit-draft"
 							data-id="<?= (int)$edit_project_id ?>"
 							title="ยกเลิกการส่งกลับเป็นร่าง เพื่อแก้ไขแล้วส่งใหม่">
@@ -21432,7 +21506,7 @@ if ($op === 'add_project') {
 					<?php endif ?>
 					<?php if (!empty($pm_can_recall_include_h)): ?>
 						<button type="button"
-							class="btn btn-outline-warning btn-lg font-weight-bold px-4 ml-2"
+							class="btn btn-lg font-weight-bold px-4 ml-2 pm-btn-recall"
 							data-action="recall-include-send"
 							data-id="<?= (int)$edit_project_id ?>"
 							title="ยกเลิกการส่งผู้พิจารณา กลับเป็นรอส่งตรวจสอบ">
@@ -25301,7 +25375,7 @@ if ($op === 'add_project') {
 				} else if (window.PM_PLAN_FIX_RESUBMIT_LOCK || window.PM_OPERATE_REPLY_LOCK) {
 					isSubmitted = true;
 					isPlanWorkflowEditable = false;
-				} else if (window.PM_PLAN_ADMIN) {
+				} else if (window.PM_PLAN_ADMIN || window.PM_UNIT_ADMIN_OWN_EDIT) {
 					isSubmitted = false;
 					isPlanWorkflowEditable = false;
 				}
@@ -25395,12 +25469,13 @@ if ($op === 'add_project') {
 			}
 			function isSubmittedNow(){
 				if (window.PM_INCLUDE_MEETING_LOCK || window.PM_PLAN_FIX_RESUBMIT_LOCK || window.PM_OPERATE_REPLY_LOCK) return true;
+				if (window.PM_UNIT_ADMIN_OWN_EDIT) return false;
 				var v = String($('#status_project_now').val() || '0');
 				return (v !== '0' && v !== '8' && v !== '4');
 			}
 
 			function applySubmittedState(nextStatus){
-				if (window.PM_PLAN_ADMIN && !window.PM_INCLUDE_MEETING_LOCK && !window.PM_PLAN_FIX_RESUBMIT_LOCK && !window.PM_OPERATE_REPLY_LOCK) {
+				if ((window.PM_PLAN_ADMIN || window.PM_UNIT_ADMIN_OWN_EDIT) && !window.PM_INCLUDE_MEETING_LOCK && !window.PM_PLAN_FIX_RESUBMIT_LOCK && !window.PM_OPERATE_REPLY_LOCK) {
 					return;
 				}
 				if (window.PM_CAN_FILL_PROJECT_RESULTS && !window.PM_INCLUDE_MEETING_LOCK && !window.PM_PLAN_FIX_RESUBMIT_LOCK && !window.PM_OPERATE_REPLY_LOCK) {
@@ -25449,7 +25524,7 @@ if ($op === 'add_project') {
 				'.pm-budget-disburse-open', '.pm-ber-disburse-btn', '.pm-budget-disburse-edit', '.pm-ber-line-edit-btn', '.pm-budget-other-action-create',
 				'#btnModalSaveGeneral', '#btnSection2ModalSave'
 			].join(','), function(e){
-				if (window.PM_PLAN_ADMIN && !window.PM_INCLUDE_MEETING_LOCK && !window.PM_PLAN_FIX_RESUBMIT_LOCK && !window.PM_OPERATE_REPLY_LOCK) return;
+				if ((window.PM_PLAN_ADMIN || window.PM_UNIT_ADMIN_OWN_EDIT) && !window.PM_INCLUDE_MEETING_LOCK && !window.PM_PLAN_FIX_RESUBMIT_LOCK && !window.PM_OPERATE_REPLY_LOCK) return;
 				var isResultUi = $(this).is('.pm-budget-disburse-open, .pm-ber-disburse-btn, .pm-budget-disburse-edit, .pm-ber-line-edit-btn, .pm-budget-other-action-create');
 				if (window.PM_OPERATE_APPROVED && !isResultUi) {
 					e.preventDefault();
@@ -25493,7 +25568,7 @@ if ($op === 'add_project') {
 				'#formSection6',
 				'#formProjectFilesUpload'
 			].join(','), function(e){
-				if (window.PM_PLAN_ADMIN && !window.PM_INCLUDE_MEETING_LOCK && !window.PM_PLAN_FIX_RESUBMIT_LOCK && !window.PM_OPERATE_REPLY_LOCK) return;
+				if ((window.PM_PLAN_ADMIN || window.PM_UNIT_ADMIN_OWN_EDIT) && !window.PM_INCLUDE_MEETING_LOCK && !window.PM_PLAN_FIX_RESUBMIT_LOCK && !window.PM_OPERATE_REPLY_LOCK) return;
 				if (isPlanWorkflowEditable && (this.id === 'formSection6' || this.id === 'formKpiGoalProject' || this.id === 'formBudgetPlan')) {
 					e.preventDefault();
 					e.stopImmediatePropagation();
@@ -25620,7 +25695,7 @@ if ($op === 'add_project') {
 						var has = ($wrap.find('tbody tr.pm-activity-plan-month-row').length > 0) && ($wrap.text().indexOf('ยังไม่มีกิจกรรม') === -1);
 						setStepCircle('#step-s4-circle', !!has);
 						setStepLine('#step-line-4', !!has);
-						if (window.PM_INCLUDE_MEETING_LOCK || window.PM_PLAN_FIX_RESUBMIT_LOCK || window.PM_OPERATE_REPLY_LOCK || (!window.PM_PLAN_ADMIN && isSubmittedNow())) { lockAddEditButtons(); }
+						if (window.PM_INCLUDE_MEETING_LOCK || window.PM_PLAN_FIX_RESUBMIT_LOCK || window.PM_OPERATE_REPLY_LOCK || (!window.PM_PLAN_ADMIN && !window.PM_UNIT_ADMIN_OWN_EDIT && isSubmittedNow())) { lockAddEditButtons(); }
 						return;
 					}
 					var errMsg = (res && res.msg) ? String(res.msg) : 'โหลดไม่สำเร็จ';
@@ -27316,7 +27391,7 @@ if ($op === 'add_project') {
 						setStepCircle('#step-s5-circle', !!hasItems);
 						if (typeof window.pmApplyResultReportFreezeUi === 'function') {
 							window.pmApplyResultReportFreezeUi();
-						} else if (window.PM_INCLUDE_MEETING_LOCK || window.PM_PLAN_FIX_RESUBMIT_LOCK || window.PM_OPERATE_REPLY_LOCK || (!window.PM_PLAN_ADMIN && isSubmittedNow())) {
+						} else if (window.PM_INCLUDE_MEETING_LOCK || window.PM_PLAN_FIX_RESUBMIT_LOCK || window.PM_OPERATE_REPLY_LOCK || (!window.PM_PLAN_ADMIN && !window.PM_UNIT_ADMIN_OWN_EDIT && isSubmittedNow())) {
 							lockAddEditButtons();
 						}
 						return;
@@ -27796,7 +27871,7 @@ if ($op === 'add_project') {
 			});
 
 			$(document).on('click', '[data-action="budget-items"]', function(e){
-				if (isSubmittedNow()) { e.preventDefault(); return; }
+				if (isSubmittedNow() && !window.PM_ADMIN_EDIT_ACTIVITY_BUDGET) { e.preventDefault(); return; }
 				e.preventDefault();
 				var aid = parseInt($(this).attr('data-activity-id') || '0', 10);
 				var nextNo = parseInt($(this).attr('data-next-no') || '1', 10);
@@ -27976,7 +28051,7 @@ if ($op === 'add_project') {
 				pmUpdateBudgetPlanSummary();
 			});
 			$(document).on('click', '[data-action="budget-plan"]', function(e){
-				if (isSubmittedNow()) { e.preventDefault(); return; }
+				if (isSubmittedNow() && !window.PM_ADMIN_EDIT_ACTIVITY_BUDGET) { e.preventDefault(); return; }
 				e.preventDefault();
 				var raw = $(this).attr('data-plan') || '{}';
 				var p = {};
@@ -33141,6 +33216,9 @@ if ($is_unit_admin) {
 #projectManageTable .pm-action-wrap .btn:hover{
 	background:#fafafa !important;
 }
+#projectManageTable .pm-action-wrap .btn > i{
+	margin-right: .45rem !important;
+}
 #projectManageTable .pm-action-wrap .btn-info{
 	background:#fff !important;
 	border-color:#e2e8f0 !important;
@@ -33160,6 +33238,29 @@ if ($is_unit_admin) {
 	background:#fff !important;
 	border-color:#f0d0d0 !important;
 	color:#dc2626 !important;
+}
+.pm-btn-recall{
+	background:#fff !important;
+	border-color:#bae6fd !important;
+	color:#0ea5e9 !important;
+}
+.pm-btn-recall:hover{
+	background:#f0f9ff !important;
+	border-color:#7dd3fc !important;
+	color:#0284c7 !important;
+}
+.pm-btn-recall > i{
+	margin-right: .45rem !important;
+}
+#projectManageTable .pm-action-wrap .pm-btn-recall{
+	background:#fff !important;
+	border-color:#bae6fd !important;
+	color:#0ea5e9 !important;
+}
+#projectManageTable .pm-action-wrap .pm-btn-recall:hover{
+	background:#f0f9ff !important;
+	border-color:#7dd3fc !important;
+	color:#0284c7 !important;
 }
 #projectManageTable .pm-sortable{
 	display:flex;
@@ -33849,6 +33950,15 @@ if ($is_unit_admin) {
 									$can_edit_row = false; // ผู้ยื่นส่งกลับแล้ว → เปิดดูรายละเอียด (ไม่ใช่ปุ่มยืนยัน)
 								}
 							}
+							$pm_unit_admin_own_row = !empty($is_unit_admin)
+								&& !(defined('PLAN_ADMIN') && PLAN_ADMIN)
+								&& function_exists('staffIsUnitAdminOfProjectMainUnit')
+								&& staffIsUnitAdminOfProjectMainUnit($db_Project, $row, (int)$staff_id, (string)$staff_code, (string)$code_unit);
+							if ($pm_unit_admin_own_row
+								&& $pm_row_status === '2'
+								&& (int)($row['midyear_request'] ?? 0) !== 1) {
+								$can_edit_row = true;
+							}
 							if (!empty($pm_cancel_maps['cancelled'][$pm_list_row_id])) {
 								$can_edit_row = false;
 								$pm_list_show_report_btn = false;
@@ -33949,21 +34059,27 @@ if ($is_unit_admin) {
 											<i class="fa <?= htmlspecialchars($pm_action_icon, ENT_QUOTES, 'UTF-8') ?>"></i> <?= htmlspecialchars($pm_action_label, ENT_QUOTES, 'UTF-8') ?>
 										</a>
 										<?php endif; ?>
-										<?php if ($pm_row_status === '0' || (defined('PLAN_ADMIN') && PLAN_ADMIN)): ?>
+										<?php
+											$pm_unit_admin_can_delete_waiting = !empty($pm_unit_admin_own_row)
+												&& $pm_row_status === '2'
+												&& (int)($row['midyear_request'] ?? 0) !== 1
+												&& empty($pm_cancel_maps['cancelled'][$pm_list_row_id]);
+										?>
+										<?php if ($pm_row_status === '0' || (defined('PLAN_ADMIN') && PLAN_ADMIN) || !empty($pm_unit_admin_can_delete_waiting)): ?>
 											<button type="button"
 												class="btn btn-outline-danger btn-xs"
 												data-action="delete-project-draft"
 												data-id="<?= (int)($row['id'] ?? 0) ?>"
 												data-code="<?= htmlspecialchars((string)($row['code_pre_project'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
 												data-name="<?= htmlspecialchars((string)($row['name_project'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+												data-status="<?= htmlspecialchars($pm_row_status, ENT_QUOTES, 'UTF-8') ?>"
 												data-status-label="<?= htmlspecialchars((string)($status_txt ?? ''), ENT_QUOTES, 'UTF-8') ?>">
 												<i class="fa fa-trash"></i> ลบ
 											</button>
 										<?php endif ?>
 										<?php
 											$pm_list_is_midyear = (int)($row['midyear_request'] ?? 0) === 1;
-											$pm_list_can_recall_submit = !(defined('PLAN_ADMIN') && PLAN_ADMIN)
-												&& !$pm_list_is_midyear
+											$pm_list_can_recall_submit = !$pm_list_is_midyear
 												&& $pm_row_status === '2';
 											$pm_list_can_recall_include = !empty($is_unit_admin)
 												&& !(defined('PLAN_ADMIN') && PLAN_ADMIN)
@@ -33971,7 +34087,7 @@ if ($is_unit_admin) {
 										?>
 										<?php if (!empty($pm_list_can_recall_submit)): ?>
 											<button type="button"
-												class="btn btn-outline-warning btn-xs"
+												class="btn btn-xs pm-btn-recall"
 												data-action="recall-submit-draft"
 												data-id="<?= (int)($row['id'] ?? 0) ?>"
 												title="ยกเลิกการส่งกลับเป็นร่าง">
@@ -33980,7 +34096,7 @@ if ($is_unit_admin) {
 										<?php endif ?>
 										<?php if (!empty($pm_list_can_recall_include)): ?>
 											<button type="button"
-												class="btn btn-outline-warning btn-xs"
+												class="btn btn-xs pm-btn-recall"
 												data-action="recall-include-send"
 												data-id="<?= (int)($row['id'] ?? 0) ?>"
 												title="ยกเลิกการส่งผู้พิจารณา กลับเป็นรอส่งตรวจสอบ">
@@ -36137,7 +36253,7 @@ if ($is_unit_admin) {
 		var code = String($(this).attr('data-code') || '').trim();
 		var name = String($(this).attr('data-name') || '').trim();
 		var stLabel = String($(this).attr('data-status-label') || '').trim();
-		var isAdmin = !!window.PM_PLAN_ADMIN;
+		var isAdmin = !!window.PM_PLAN_ADMIN || String($(this).attr('data-status') || '') === '2';
 		var title = isAdmin ? 'ยืนยันการลบโครงการ?' : 'ยืนยันการลบโครงการร่าง?';
 		var text = isAdmin
 			? ((code ? code + ' ' : '') + name + (stLabel ? ' (' + stLabel + ')' : '') + '\nโครงการจะหายจากรายการ และระบบเก็บประวัติการลบไว้')
