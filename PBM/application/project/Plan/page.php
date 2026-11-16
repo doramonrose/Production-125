@@ -61,9 +61,13 @@ if ($row = mysqli_fetch_array($result)) {
 		$op_ajax = trim((string)$_POST['op']);
 	}
 	// ระบุ op ที่หน้า project_approve ใช้ (รวม flow ขอดำเนินการ operate) เพื่อไม่ให้ถูกห่อ layout HTML ของ Plan_Admin จนพัง JSON
+	// save_section2_field / save_section6_fields ไม่ลงท้าย _ajax — ถ้าไม่ตัด layout ก่อน
+	// จะได้ HTML+JSON (บันทึกจริงแล้ว แต่ Swal ขึ้น "บันทึกไม่สำเร็จ / กรุณาลองใหม่")
 	$is_ajax_op = $op_ajax !== '' && (
 		(substr($op_ajax, 0, 7) === 'render_')
 		|| (substr($op_ajax, -5) === '_ajax')
+		|| $op_ajax === 'save_section2_field'
+		|| $op_ajax === 'save_section6_fields'
 		|| $op_ajax === 'get_request_detail'
 		|| $op_ajax === 'get_operate_project_detail'
 		|| $op_ajax === 'get_report_project_detail'
@@ -1569,6 +1573,8 @@ if ($row = mysqli_fetch_array($result)) {
 	$is_ajax_op = $op_ajax !== '' && (
 		(substr($op_ajax, 0, 7) === 'render_')
 		|| (substr($op_ajax, -5) === '_ajax')
+		|| $op_ajax === 'save_section2_field'
+		|| $op_ajax === 'save_section6_fields'
 	);
 	if ($is_post && $is_ajax_op && in_array($page, ['project_manage', 'project_approve', 'project_follow', 'project_all'], true)) {
 		while (ob_get_level()) {
