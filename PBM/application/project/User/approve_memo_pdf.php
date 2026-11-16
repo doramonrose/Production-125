@@ -265,8 +265,15 @@ $approverSigImg = $fetchImgLocal($approver_sig);
 
 $unitShow = $unit !== '' ? $unit : 'หน่วยงาน';
 if ($dept === '') {
-	$dept = $unitShow . ' คณะเภสัชศาสตร์ โทร.44344';
+	$dept = function_exists('pm_approve_memo_dept_line')
+		? pm_approve_memo_dept_line($unitShow, '')
+		: ($unitShow . ' คณะเภสัชศาสตร์');
 }
+// แทนเบอร์ hardcode เก่าถ้ายังหลุดมาในค่าที่ส่งมา
+if (preg_match('/โทร\.?\s*44344\b/u', (string)$dept)) {
+	$dept = trim((string)preg_replace('/\s*โทร\.?\s*44344\b/u', '', (string)$dept));
+}
+$proposer_pos = 'หัวหน้าโครงการ';
 // เลขที่ต้องมาจาก API ส่วนกลาง (รูปแบบ MHESI…/ลำดับ) — ห้ามประกอบ อว/ผxxx เอง
 if ($doc_no === '') {
 	$doc_no = '....................';
@@ -275,11 +282,15 @@ $doc_no = preg_replace('#\s*/+\s*#', '/', trim((string)$doc_no));
 if ($date === '') {
 	$date = '....................';
 }
-if ($proposer_pos === '') {
-	$proposer_pos = '........................';
-}
 if ($approver_pos === '') {
 	$approver_pos = '........................';
+}
+$approverPosLines = function_exists('pm_memo_approver_pos_lines')
+	? pm_memo_approver_pos_lines((string)$approver_pos)
+	: [trim((string)$approver_pos) !== '' ? trim((string)$approver_pos) : '........................'];
+$approverPosHtml = '';
+foreach ($approverPosLines as $__apl) {
+	$approverPosHtml .= ($approverPosHtml !== '' ? '<br>' : '') . $h($__apl);
 }
 
 $tempDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'project_approve_memo';
@@ -382,7 +393,7 @@ $signHtmlChange = '
 				'</td>
 				<td width="52%">
 					<div class="meta-line">' . $h($approver_name !== '' ? $approver_name : '........................') . '</div>
-					<div class="meta-line">' . $h($approver_pos) . '</div>
+					<div class="meta-line">' . $approverPosHtml . '</div>
 				</td>
 			</tr></table>
 		</div>
@@ -430,7 +441,7 @@ $signHtmlOperate = '
 		$pdfSignLines(
 			$approverSigImg !== '' ? '<img class="sig-img" src="' . $h($approverSigImg) . '" alt="" />' : '',
 			$h($pmPdfParenName($approver_name)),
-			$h($approver_pos !== '' ? $approver_pos : '........................'),
+			$approverPosHtml !== '' ? $approverPosHtml : $h('........................'),
 			true
 		) . '
 	</td>

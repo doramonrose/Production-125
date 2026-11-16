@@ -20599,7 +20599,15 @@ if ($op === 'add_project') {
 						if ($__ucAm !== '' && isset($unit_names[$__ucAm])) {
 							$pm_am_unit = (string)$unit_names[$__ucAm];
 						}
-						$pm_am_dept = ($pm_am_unit !== '-' && $pm_am_unit !== '' ? $pm_am_unit : 'หน่วยงาน') . ' คณะเภสัชศาสตร์ โทร.44344';
+						$__pmAmPhone = function_exists('pm_project_unit_phone')
+							? pm_project_unit_phone($db_Project, $__ucAm)
+							: '';
+						$pm_am_dept = function_exists('pm_approve_memo_dept_line')
+							? pm_approve_memo_dept_line(
+								($pm_am_unit !== '-' && $pm_am_unit !== '' ? $pm_am_unit : 'หน่วยงาน'),
+								$__pmAmPhone
+							)
+							: ((($pm_am_unit !== '-' && $pm_am_unit !== '' ? $pm_am_unit : 'หน่วยงาน') . ' คณะเภสัชศาสตร์') . ($__pmAmPhone !== '' ? (' โทร.' . $__pmAmPhone) : ''));
 						$__paperName = 'อว';
 						$__paperStart = '1';
 						if ($__ucAm !== '') {
@@ -20630,7 +20638,12 @@ if ($op === 'add_project') {
 								if ($ps !== '') $__paperStart = $ps;
 								if ($pm_am_unit === '-' || $pm_am_unit === '') {
 									$pm_am_unit = trim((string)($rPaper['name'] ?? '')) ?: $pm_am_unit;
-									$pm_am_dept = ($pm_am_unit !== '-' && $pm_am_unit !== '' ? $pm_am_unit : 'หน่วยงาน') . ' คณะเภสัชศาสตร์ โทร.44344';
+									$pm_am_dept = function_exists('pm_approve_memo_dept_line')
+										? pm_approve_memo_dept_line(
+											($pm_am_unit !== '-' && $pm_am_unit !== '' ? $pm_am_unit : 'หน่วยงาน'),
+											$__pmAmPhone
+										)
+										: ((($pm_am_unit !== '-' && $pm_am_unit !== '' ? $pm_am_unit : 'หน่วยงาน') . ' คณะเภสัชศาสตร์') . ($__pmAmPhone !== '' ? (' โทร.' . $__pmAmPhone) : ''));
 								}
 							}
 						}
@@ -20691,9 +20704,9 @@ if ($op === 'add_project') {
 							if ($tsDates) $pm_am_date = $fmtThaiLong($tsDates);
 						}
 
-						// ผู้เสนอ = หัวหน้าโครงการ (แสดงตำแหน่งจริงจาก position_code)
+						// ผู้เสนอ = หัวหน้าโครงการ (ตำแหน่งในบันทึกข้อความคงที่)
 						$pm_am_proposer_key = '';
-						$pm_am_proposer_pos = '';
+						$pm_am_proposer_pos = 'หัวหน้าโครงการ';
 						if (!empty($saved_heads) && is_array($saved_heads)) {
 							$__h = $saved_heads[0];
 							$pm_am_proposer_key = trim((string)($__h['staff_project'] ?? $__h['staff_id'] ?? ''));
@@ -20705,8 +20718,7 @@ if ($op === 'add_project') {
 								$__hkEsc = mysqli_real_escape_string($db_person, $pm_am_proposer_key);
 								$qHn = @mysqli_query(
 									$db_person,
-									"SELECT id, files_sig, position_code, position_dean, prefix_code,
-									        CONCAT(TRIM(IFNULL(fname,'')),' ',TRIM(IFNULL(lname,''))) AS n
+									"SELECT id, files_sig, prefix_code, fname, lname
 									 FROM staff
 									 WHERE id='" . (int)$pm_am_proposer_key . "'
 									    OR TRIM(CAST(IFNULL(code,'') AS CHAR))='" . $__hkEsc . "'
@@ -20715,60 +20727,31 @@ if ($op === 'add_project') {
 								$rHn = $qHn ? mysqli_fetch_assoc($qHn) : null;
 								if ($rHn) {
 									$pm_am_proposer_sid = (int)($rHn['id'] ?? $pm_am_proposer_sid);
-									$__pfxName = '';
-									$__px = trim((string)($rHn['prefix_code'] ?? ''));
-									if ($__px !== '' && function_exists('getPrefix')) {
-										$__rpx = getPrefix($db_person, $__px);
-										if (is_array($__rpx)) {
-											$__pfxName = trim((string)($__rpx['name'] ?? ''));
-										}
-									}
-									$pm_am_proposer_name = trim($__pfxName . ' ' . trim((string)($rHn['n'] ?? '')));
+									$pm_am_proposer_name = function_exists('pm_memo_staff_display_name')
+										? pm_memo_staff_display_name(
+											$db_person,
+											(string)($rHn['prefix_code'] ?? ''),
+											(string)($rHn['fname'] ?? ''),
+											(string)($rHn['lname'] ?? '')
+										)
+										: trim(trim((string)($rHn['fname'] ?? '')) . ' ' . trim((string)($rHn['lname'] ?? '')));
 									$pm_am_proposer_sig_file = trim((string)($rHn['files_sig'] ?? ''));
-									$__pc = trim((string)($rHn['position_code'] ?? ''));
-									if ($__pc !== '' && function_exists('getPosition')) {
-										$__rp = getPosition($db_person, $__pc);
-										if (is_array($__rp)) {
-											$pm_am_proposer_pos = trim((string)($__rp['name'] ?? ''));
-										}
-									}
 								}
 							}
 						}
 						if ($pm_am_proposer_name === '') {
-							$__mePfx = '';
-							$__mePx = trim((string)($r_staff['prefix_code'] ?? ''));
-							if ($__mePx !== '' && function_exists('getPrefix')) {
-								$__rpm = getPrefix($db_person, $__mePx);
-								if (is_array($__rpm)) {
-									$__mePfx = trim((string)($__rpm['name'] ?? ''));
-								}
-							}
-							$pm_am_proposer_name = trim($__mePfx . ' ' . trim((string)(($r_staff['fname'] ?? '') . ' ' . ($r_staff['lname'] ?? ''))));
+							$pm_am_proposer_name = function_exists('pm_memo_staff_display_name')
+								? pm_memo_staff_display_name(
+									$db_person,
+									(string)($r_staff['prefix_code'] ?? ''),
+									(string)($r_staff['fname'] ?? ''),
+									(string)($r_staff['lname'] ?? '')
+								)
+								: trim(trim((string)($r_staff['fname'] ?? '')) . ' ' . trim((string)($r_staff['lname'] ?? '')));
 							$pm_am_proposer_sid = (int)($r_staff['id'] ?? $staff_id ?? 0);
 							$pm_am_proposer_sig_file = trim((string)($r_staff['files_sig'] ?? ''));
-							if ($pm_am_proposer_pos === '') {
-								$__pcMe = trim((string)($r_staff['position_code'] ?? ''));
-								if ($__pcMe !== '' && function_exists('getPosition')) {
-									$__rpMe = getPosition($db_person, $__pcMe);
-									if (is_array($__rpMe)) {
-										$pm_am_proposer_pos = trim((string)($__rpMe['name'] ?? ''));
-									}
-								}
-							}
 						}
-						if ($pm_am_proposer_sid > 0 && function_exists('pm_chain_entered_position')) {
-							$__typedProp = pm_chain_entered_position((string)($saved_pre['operate_certifiers_json'] ?? ''), (int)$pm_am_proposer_sid);
-							$__typedPropLate = pm_chain_entered_position((string)($saved_pre['operate_approvers_json'] ?? ''), (int)$pm_am_proposer_sid);
-							if ($__typedPropLate !== '') {
-								$pm_am_proposer_pos = $__typedPropLate;
-							} elseif ($__typedProp !== '') {
-								$pm_am_proposer_pos = $__typedProp;
-							}
-						}
-						if ($pm_am_proposer_pos === '') {
-							$pm_am_proposer_pos = 'หัวหน้าโครงการ';
-						}
+						$pm_am_proposer_pos = 'หัวหน้าโครงการ';
 
 						// ชื่อผู้อนุมัติจากข้อมูลบุคคล ตำแหน่งใช้ข้อความที่กรอกล่าสุดในลำดับอนุมัติ
 						$pm_approve_memo_approver_pos_admin = '';
@@ -20790,15 +20773,14 @@ if ($op === 'add_project') {
 								$__apFn = trim((string)($rApPos['fname'] ?? ''));
 								$__apLn = trim((string)($rApPos['lname'] ?? ''));
 								if ($__apFn !== '' || $__apLn !== '') {
-									$__apPfx = '';
-									$__apPx = trim((string)($rApPos['prefix_code'] ?? ''));
-									if ($__apPx !== '' && function_exists('getPrefix')) {
-										$__rpxa = getPrefix($db_person, $__apPx);
-										if (is_array($__rpxa)) {
-											$__apPfx = trim((string)($__rpxa['name'] ?? ''));
-										}
-									}
-									$pm_approve_memo_approver_name = trim($__apPfx . ' ' . trim($__apFn . ' ' . $__apLn));
+									$pm_approve_memo_approver_name = function_exists('pm_memo_staff_display_name')
+										? pm_memo_staff_display_name(
+											$db_person,
+											(string)($rApPos['prefix_code'] ?? ''),
+											$__apFn,
+											$__apLn
+										)
+										: trim($__apFn . ' ' . $__apLn);
 								}
 							}
 						}
@@ -20821,7 +20803,13 @@ if ($op === 'add_project') {
 						$__savedMemoDept = trim((string)($saved_pre['approve_memo_dept'] ?? ''));
 						$__savedMemoDate = trim((string)($saved_pre['approve_memo_date'] ?? ''));
 						if ($__savedMemoDept !== '') {
-							$pm_am_dept = $__savedMemoDept;
+							$pm_am_dept = function_exists('pm_approve_memo_pick_dept')
+								? pm_approve_memo_pick_dept(
+									($pm_am_unit !== '-' && $pm_am_unit !== '' ? $pm_am_unit : 'หน่วยงาน'),
+									$__pmAmPhone ?? '',
+									$__savedMemoDept
+								)
+								: $__savedMemoDept;
 						}
 						if ($__savedMemoDate !== '') {
 							$pm_am_date = $__savedMemoDate;
@@ -28496,7 +28484,15 @@ if ($op === 'add_project') {
 			}
 			$pm_chg_am_dept = trim((string)($pm_am_dept ?? ''));
 			if ($pm_chg_am_dept === '') {
-				$pm_chg_am_dept = ($pm_chg_am_unit !== '-' && $pm_chg_am_unit !== '' ? $pm_chg_am_unit : 'หน่วยงาน') . ' คณะเภสัชศาสตร์ โทร.44344';
+				$__chgPhone = function_exists('pm_project_unit_phone')
+					? pm_project_unit_phone($db_Project, trim((string)($saved_pre['code_unit'] ?? '')))
+					: '';
+				$pm_chg_am_dept = function_exists('pm_approve_memo_dept_line')
+					? pm_approve_memo_dept_line(
+						($pm_chg_am_unit !== '-' && $pm_chg_am_unit !== '' ? $pm_chg_am_unit : 'หน่วยงาน'),
+						$__chgPhone
+					)
+					: ((($pm_chg_am_unit !== '-' && $pm_chg_am_unit !== '' ? $pm_chg_am_unit : 'หน่วยงาน') . ' คณะเภสัชศาสตร์') . ($__chgPhone !== '' ? (' โทร.' . $__chgPhone) : ''));
 			}
 			$pm_chg_am_doc_no = trim((string)($pm_am_doc_no ?? ''));
 			if ($pm_chg_am_doc_no === '') {
@@ -28514,8 +28510,7 @@ if ($op === 'add_project') {
 					$__hkEsc = mysqli_real_escape_string($db_person, $__hkChg);
 					$qHnChg = @mysqli_query(
 						$db_person,
-						"SELECT id, files_sig, position_code,
-						        CONCAT(TRIM(IFNULL(fname,'')),' ',TRIM(IFNULL(lname,''))) AS n
+						"SELECT id, files_sig, prefix_code, fname, lname
 						 FROM staff
 						 WHERE id='" . (int)$__hkChg . "'
 						    OR TRIM(CAST(IFNULL(code,'') AS CHAR))='" . $__hkEsc . "'
@@ -28524,23 +28519,21 @@ if ($op === 'add_project') {
 					$rHnChg = $qHnChg ? mysqli_fetch_assoc($qHnChg) : null;
 					if ($rHnChg) {
 						$pm_chg_am_proposer_sid = (int)($rHnChg['id'] ?? 0);
-						$pm_chg_am_proposer_name = trim((string)($rHnChg['n'] ?? ''));
-						$__pcChg = trim((string)($rHnChg['position_code'] ?? ''));
-						if ($__pcChg !== '' && function_exists('getPosition')) {
-							$__rpChg = getPosition($db_person, $__pcChg);
-							if (is_array($__rpChg)) {
-								$pm_chg_am_proposer_pos = trim((string)($__rpChg['name'] ?? ''));
-							}
-						}
+						$pm_chg_am_proposer_name = function_exists('pm_memo_staff_display_name')
+							? pm_memo_staff_display_name(
+								$db_person,
+								(string)($rHnChg['prefix_code'] ?? ''),
+								(string)($rHnChg['fname'] ?? ''),
+								(string)($rHnChg['lname'] ?? '')
+							)
+							: trim(trim((string)($rHnChg['fname'] ?? '')) . ' ' . trim((string)($rHnChg['lname'] ?? '')));
 						$__packHead = $pmChgResolveStaffSigPack($db_person, (string)$pm_chg_am_proposer_sid, $__chgPathSigBase, $__chgPathSigAlts, trim((string)($rHnChg['files_sig'] ?? '')));
 						$pm_chg_am_proposer_sig = (string)($__packHead['url'] ?? '');
 						$pm_chg_am_proposer_sig_alts = (array)($__packHead['alts'] ?? []);
 					}
 				}
 			}
-			if ($pm_chg_am_proposer_pos === '') {
-				$pm_chg_am_proposer_pos = 'หัวหน้าโครงการ';
-			}
+			$pm_chg_am_proposer_pos = 'หัวหน้าโครงการ';
 
 			$pm_chg_year = trim((string)($saved_pre['year_project'] ?? ''));
 			if ($pm_chg_year !== '' && ctype_digit($pm_chg_year) && (int)$pm_chg_year > 0 && (int)$pm_chg_year < 2400) {
@@ -28632,13 +28625,19 @@ if ($op === 'add_project') {
 					if ($apSid > 0 && isset($db_person) && ($db_person instanceof mysqli)) {
 						$qAp = @mysqli_query(
 							$db_person,
-							"SELECT id, files_sig, position_dean, position_code,
-							        CONCAT(TRIM(IFNULL(fname,'')),' ',TRIM(IFNULL(lname,''))) AS n
+							"SELECT id, files_sig, position_dean, position_code, prefix_code, fname, lname
 							 FROM staff WHERE id='" . $apSid . "' LIMIT 1"
 						);
 						$rAp = $qAp ? mysqli_fetch_assoc($qAp) : null;
 						if ($rAp) {
-							$apName = trim((string)($rAp['n'] ?? ''));
+							$apName = function_exists('pm_memo_staff_display_name')
+								? pm_memo_staff_display_name(
+									$db_person,
+									(string)($rAp['prefix_code'] ?? ''),
+									(string)($rAp['fname'] ?? ''),
+									(string)($rAp['lname'] ?? '')
+								)
+								: trim(trim((string)($rAp['fname'] ?? '')) . ' ' . trim((string)($rAp['lname'] ?? '')));
 							$__typedChg = '';
 							if (function_exists('pm_chain_entered_position')) {
 								$__chgStaff = (int)($la['staff_id'] ?? 0);
@@ -29390,7 +29389,7 @@ if ($op === 'add_project') {
 										<div class="pm-am-sig-fallback" style="display:none;"></div>
 									<?php endif; ?>
 									<div class="pm-am-sign-name" id="pmAmProposerName"><?= htmlspecialchars($pmAmDispProposer, ENT_QUOTES, 'UTF-8') ?></div>
-									<div class="pm-am-sign-pos" id="pmAmProposerPos"><?= htmlspecialchars(($pm_am_proposer_pos ?? '') !== '' ? $pm_am_proposer_pos : '........................', ENT_QUOTES, 'UTF-8') ?></div>
+									<div class="pm-am-sign-pos" id="pmAmProposerPos">หัวหน้าโครงการ</div>
 								</div>
 
 								<div class="pm-am-sign-plain">
@@ -29400,7 +29399,9 @@ if ($op === 'add_project') {
 										<div class="pm-am-sig-fallback" style="display:none;"></div>
 									<?php endif; ?>
 									<div class="pm-am-sign-name" id="pmAmApproverName"><?= htmlspecialchars($pmAmDispApprover, ENT_QUOTES, 'UTF-8') ?></div>
-									<div class="pm-am-sign-pos" id="pmAmApproverPos"><?= htmlspecialchars(($pm_approve_memo_approver_pos ?? '') !== '' ? $pm_approve_memo_approver_pos : '........................', ENT_QUOTES, 'UTF-8') ?></div>
+									<div class="pm-am-sign-pos" id="pmAmApproverPos" data-pos="<?= htmlspecialchars(($pm_approve_memo_approver_pos ?? '') !== '' ? $pm_approve_memo_approver_pos : '........................', ENT_QUOTES, 'UTF-8') ?>"><?= function_exists('pm_memo_approver_pos_html')
+										? pm_memo_approver_pos_html((string)($pm_approve_memo_approver_pos ?? ''))
+										: htmlspecialchars(($pm_approve_memo_approver_pos ?? '') !== '' ? $pm_approve_memo_approver_pos : '........................', ENT_QUOTES, 'UTF-8') ?></div>
 								</div>
 							</div>
 						</div>
@@ -29647,11 +29648,11 @@ if ($op === 'add_project') {
 				budget: valText('#pmAmBudgetVal'),
 				budget_src: valText('#pmAmBudgetSrcVal'),
 				proposer_name: valText('#pmAmProposerName'),
-				proposer_pos: valText('#pmAmProposerPos'),
+				proposer_pos: 'หัวหน้าโครงการ',
 				proposer_date: '',
 				proposer_sig: String($('#pmAmProposerSig').prop('src') || $('#pmAmProposerSig').attr('src') || ''),
 				approver_name: valText('#pmAmApproverName'),
-				approver_pos: valText('#pmAmApproverPos'),
+				approver_pos: String($('#pmAmApproverPos').attr('data-pos') || valText('#pmAmApproverPos') || ''),
 				approver_date: '',
 				approver_sig: String($('#pmAmApproverSig').prop('src') || $('#pmAmApproverSig').attr('src') || '')
 			};
@@ -29811,7 +29812,7 @@ if ($op === 'add_project') {
 											<div class="pm-am-sign-col-sig" id="pmChgAmApproverSigWrap"></div>
 											<div class="pm-am-sign-col-meta">
 												<div class="pm-am-sign-name" id="pmChgAmApproverName">........................</div>
-												<div id="pmChgAmApproverPos">........................</div>
+												<div id="pmChgAmApproverPos" data-pos="">........................</div>
 											</div>
 										</div>
 									</div>
@@ -29919,9 +29920,34 @@ if ($op === 'add_project') {
 			pmChgSetText('pmChgAmBudgetVal', data.budget, '0');
 			pmChgSetText('pmChgAmReasonVal', data.reason, '…');
 			pmChgSetText('pmChgAmProposerName', data.proposer_name, '........................');
-			pmChgSetText('pmChgAmProposerPos', data.proposer_pos, '........................');
+			pmChgSetText('pmChgAmProposerPos', 'หัวหน้าโครงการ', 'หัวหน้าโครงการ');
 			pmChgSetText('pmChgAmApproverName', data.approver_name, '........................');
-			pmChgSetText('pmChgAmApproverPos', data.approver_pos, '........................');
+			(function(){
+				var el = document.getElementById('pmChgAmApproverPos');
+				if (!el) return;
+				var raw = String(data.approver_pos || '').trim() || '........................';
+				el.setAttribute('data-pos', raw);
+				var marker = 'ปฏิบัติการแทนคณบดีคณะเภสัชศาสตร์';
+				var lines = [raw];
+				if (raw === 'คณบดีคณะเภสัชศาสตร์') {
+					lines = [raw];
+				} else {
+					var m = raw.match(/^(รองคณบดี|ผู้ช่วยคณบดี)\s*ปฏิบัติการแทนคณบดีคณะเภสัชศาสตร์$/);
+					if (m) {
+						lines = [m[1], marker];
+					} else {
+						var m2 = raw.match(/^(.*?)\s+ปฏิบัติการแทนคณบดีคณะเภสัชศาสตร์$/);
+						if (m2 && /^(รองคณบดี|ผู้ช่วยคณบดี)/.test(String(m2[1] || '').trim())) {
+							lines = [String(m2[1]).trim(), marker];
+						}
+					}
+				}
+				el.innerHTML = lines.map(function(ln){
+					var d = document.createElement('div');
+					d.textContent = ln;
+					return d.innerHTML;
+				}).join('<br>');
+			})();
 			pmChgRenderSig('pmChgAmProposerSigWrap', data.proposer_sig, data.proposer_sig_alts, 'ลายเซ็นผู้เสนอ');
 			pmChgRenderSig('pmChgAmApproverSigWrap', data.approver_sig, data.approver_sig_alts, 'ลายเซ็นผู้อนุมัติ');
 			pmChgSetText('pmChgAmEsignFooter', data.esign_footer, '');
@@ -30104,11 +30130,11 @@ if ($op === 'add_project') {
 				reason: valText('#pmChgAmReasonVal'),
 				details_json: JSON.stringify(details),
 				proposer_name: valText('#pmChgAmProposerName'),
-				proposer_pos: valText('#pmChgAmProposerPos'),
+				proposer_pos: 'หัวหน้าโครงการ',
 				proposer_date: '',
 				proposer_sig: String($('#pmChgAmProposerSigWrap img').prop('src') || $('#pmChgAmProposerSigWrap img').attr('src') || ''),
 				approver_name: valText('#pmChgAmApproverName'),
-				approver_pos: valText('#pmChgAmApproverPos'),
+				approver_pos: String($('#pmChgAmApproverPos').attr('data-pos') || valText('#pmChgAmApproverPos') || ''),
 				approver_date: '',
 				approver_sig: String($('#pmChgAmApproverSigWrap img').prop('src') || $('#pmChgAmApproverSigWrap img').attr('src') || '')
 			};

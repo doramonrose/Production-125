@@ -810,6 +810,264 @@ if (!function_exists('pm_project_org_unit_code')) {
 }
 
 /**
+ * แผนที่เบอร์โทรจาก Department API (unit/job/dep) — cache ใน request
+ * @return array<string, array{unitPhone:string,jobPhone:string,depPhone:string}>
+ */
+if (!function_exists('pm_department_api_phone_map')) {
+	function pm_department_api_phone_map(): array
+	{
+		static $map = null;
+		if (is_array($map)) {
+			return $map;
+		}
+		$map = [];
+		try {
+			if (!function_exists('pm_document_number_config')) {
+				$client = __DIR__ . '/document_number_client.php';
+				if (is_file($client)) {
+					require_once $client;
+				}
+			}
+			if (!function_exists('pm_document_number_config') || !function_exists('pm_document_number_http_json')) {
+				return $map;
+			}
+			$cfg = pm_document_number_config();
+			$url = trim((string)($cfg['department_api_url'] ?? ''));
+			$token = trim((string)($cfg['department_api_token'] ?? ''));
+			if ($url === '' || $token === '') {
+				return $map;
+			}
+			$auth = (stripos($token, 'Bearer ') === 0) ? $token : ('Bearer ' . $token);
+			$res = pm_document_number_http_json('GET', $url, [
+				'Accept' => 'application/json',
+				'Authorization' => $auth,
+			], null, false);
+			$payload = is_array($res['data'] ?? null) ? $res['data'] : [];
+			$rows = is_array($payload['data'] ?? null) ? $payload['data'] : [];
+			foreach ($rows as $item) {
+				if (!is_array($item)) {
+					continue;
+				}
+				$depCode = trim((string)($item['dep_code'] ?? $item['department_code'] ?? $item['code'] ?? ''));
+				$jobCode = trim((string)($item['job_code'] ?? ''));
+				$unitCode = trim((string)($item['unit_code'] ?? ''));
+				$agencyName = trim((string)($item['agency_name'] ?? $item['unit_name'] ?? ''));
+				$depPhone = trim((string)($item['dep_phone'] ?? ''));
+				$jobPhone = trim((string)($item['job_phone'] ?? ''));
+				$unitPhone = trim((string)($item['phone'] ?? $item['unit_phone'] ?? ''));
+				if ($depCode !== '') {
+					$map[$depCode] = [
+						'unitPhone' => '',
+						'jobPhone' => '',
+						'depPhone' => $depPhone,
+					];
+				}
+				if ($jobCode !== '') {
+					$map[$jobCode] = [
+						'unitPhone' => '',
+						'jobPhone' => $jobPhone,
+						'depPhone' => $depPhone,
+					];
+				}
+				if ($agencyName !== '') {
+					$agencyCode = $unitCode !== '' ? $unitCode : ($jobCode !== '' ? $jobCode : $depCode);
+					if ($agencyCode !== '') {
+						$map[$agencyCode] = [
+							'unitPhone' => $unitPhone,
+							'jobPhone' => $jobPhone,
+							'depPhone' => $depPhone,
+						];
+					}
+				} elseif ($unitCode !== '') {
+					$map[$unitCode] = [
+						'unitPhone' => $unitPhone,
+						'jobPhone' => $jobPhone,
+						'depPhone' => $depPhone,
+					];
+				}
+			}
+		} catch (Throwable $e) {
+			$map = is_array($map) ? $map : [];
+		}
+		return $map;
+	}
+}
+
+/** เบอร์โทรของรหัสหน่วยงานส่วนกลาง (unit > job > dep) */
+if (!function_exists('pm_resolve_org_unit_phone')) {
+	function pm_resolve_org_unit_phone(string $orgCode): string
+	{
+		$orgCode = trim($orgCode);
+		if ($orgCode === '') {
+			return '';
+		}
+		$map = pm_department_api_phone_map();
+		$meta = isset($map[$orgCode]) && is_array($map[$orgCode]) ? $map[$orgCode] : [];
+		foreach (['unitPhone', 'jobPhone', 'depPhone'] as $k) {
+			$p = trim((string)($meta[$k] ?? ''));
+			if ($p !== '') {
+				return $p;
+			}
+		}
+		return '';
+	}
+}
+
+/** เบอร์โทรหน่วยงานโครงการ: set_unit.phone (ถ้ามี) แล้วค่อย API ตาม unit_code */
+if (!function_exists('pm_project_unit_phone')) {
+	function pm_project_unit_phone($db_Project, $codeUnit): string
+	{
+		$codeUnit = trim((string)$codeUnit);
+		if ($codeUnit === '' || !($db_Project instanceof mysqli)) {
+			return '';
+		}
+		$cols = function_exists('planSetUnitColumnSet') ? planSetUnitColumnSet($db_Project) : [];
+		$phoneCol = '';
+		foreach (['phone', 'tel', 'telephone', 'unit_phone'] as $c) {
+			if (!empty($cols[$c])) {
+				$phoneCol = $c;
+				break;
+			}
+		}
+		if ($phoneCol !== '') {
+			$esc = mysqli_real_escape_string($db_Project, $codeUnit);
+			$q = @mysqli_query(
+				$db_Project,
+				"SELECT IFNULL(`{$phoneCol}`,'') AS phone
+				 FROM set_unit
+				 WHERE (CAST(id AS CHAR)='{$esc}' OR TRIM(CAST(IFNULL(code,'') AS CHAR))='{$esc}')
+				   AND IFNULL(status,'') NOT IN ('99','99.0')
+				 LIMIT 1"
+			);
+			$r = $q ? mysqli_fetch_assoc($q) : null;
+			$local = trim((string)($r['phone'] ?? ''));
+			if ($local !== '') {
+				return $local;
+			}
+		}
+		$org = function_exists('pm_project_org_unit_code')
+			? pm_project_org_unit_code($db_Project, $codeUnit)
+			: '';
+		return $org !== '' ? pm_resolve_org_unit_phone($org) : '';
+	}
+}
+
+/** บรรทัดส่วนงานในบันทึกข้อความ */
+if (!function_exists('pm_approve_memo_dept_line')) {
+	function pm_approve_memo_dept_line(string $unitName, string $phone = ''): string
+	{
+		$unit = trim($unitName);
+		if ($unit === '' || $unit === '-') {
+			$unit = 'หน่วยงาน';
+		}
+		$base = $unit . ' คณะเภสัชศาสตร์';
+		$phone = trim($phone);
+		return $phone !== '' ? ($base . ' โทร.' . $phone) : $base;
+	}
+}
+
+/**
+ * เลือกบรรทัดส่วนงาน: สร้างใหม่จากเบอร์หน่วยงาน
+ * ถ้ามีค่าที่เคยบันทึกและยังเป็นโทร.44344 ให้แทนด้วยเบอร์จริง
+ */
+if (!function_exists('pm_approve_memo_pick_dept')) {
+	function pm_approve_memo_pick_dept(string $unitName, string $phone, string $savedDept = ''): string
+	{
+		$built = pm_approve_memo_dept_line($unitName, $phone);
+		$saved = trim($savedDept);
+		if ($saved === '') {
+			return $built;
+		}
+		if (preg_match('/โทร\.?\s*44344\b/u', $saved)) {
+			if ($phone !== '') {
+				return (string)preg_replace('/โทร\.?\s*44344\b/u', 'โทร.' . $phone, $saved);
+			}
+			return trim((string)preg_replace('/\s*โทร\.?\s*44344\b/u', '', $saved));
+		}
+		return $saved;
+	}
+}
+
+/** คำนำหน้าแบบเต็มจากแถว prefix (name_full ก่อน แล้วค่อย name) */
+if (!function_exists('pm_prefix_full_label')) {
+	function pm_prefix_full_label($prefixRow): string
+	{
+		if (!is_array($prefixRow)) {
+			return '';
+		}
+		$full = trim((string)($prefixRow['name_full'] ?? ''));
+		if ($full !== '') {
+			return $full;
+		}
+		return trim((string)($prefixRow['name'] ?? ''));
+	}
+}
+
+/** ชื่อ+คำนำหน้าแบบเต็ม สำหรับบันทึกข้อความ */
+if (!function_exists('pm_memo_staff_display_name')) {
+	function pm_memo_staff_display_name($db_person, string $prefixCode, string $fname, string $lname): string
+	{
+		$fname = trim($fname);
+		$lname = trim($lname);
+		$pfx = '';
+		$prefixCode = trim($prefixCode);
+		if ($prefixCode !== '' && ($db_person instanceof mysqli) && function_exists('getPrefix')) {
+			$r = getPrefix($db_person, $prefixCode);
+			$pfx = pm_prefix_full_label($r);
+		}
+		if ($pfx === '') {
+			return trim($fname . ($lname !== '' ? ' ' . $lname : ''));
+		}
+		// ติดชื่อทันทีถ้าคำนำหน้าไม่ลงท้ายด้วยช่องว่าง (ตามรูปแบบ name_full ของระบบบุคคล)
+		$join = preg_match('/\s$/u', $pfx) ? '' : '';
+		return trim($pfx . $join . $fname . ($lname !== '' ? ' ' . $lname : ''));
+	}
+}
+
+/**
+ * แยกบรรทัดตำแหน่งผู้อนุมัติในบันทึกข้อความ
+ * คณบดีคณะเภสัชศาสตร์ = 1 แถว
+ * รองคณบดี/ผู้ช่วยคณบดี + ปฏิบัติการแทนคณบดีคณะเภสัชศาสตร์ = 2 แถว
+ * @return list<string>
+ */
+if (!function_exists('pm_memo_approver_pos_lines')) {
+	function pm_memo_approver_pos_lines(string $pos): array
+	{
+		$pos = trim($pos);
+		if ($pos === '') {
+			return ['........................'];
+		}
+		if ($pos === 'คณบดีคณะเภสัชศาสตร์') {
+			return [$pos];
+		}
+		$marker = 'ปฏิบัติการแทนคณบดีคณะเภสัชศาสตร์';
+		if (preg_match('/^(รองคณบดี|ผู้ช่วยคณบดี)\s*' . preg_quote($marker, '/') . '$/u', $pos, $m)) {
+			return [trim((string)$m[1]), $marker];
+		}
+		if (preg_match('/^(.*?)(?:\s+)' . preg_quote($marker, '/') . '$/u', $pos, $m)) {
+			$left = trim((string)$m[1]);
+			if ($left !== '' && preg_match('/^(รองคณบดี|ผู้ช่วยคณบดี)/u', $left)) {
+				return [$left, $marker];
+			}
+		}
+		return [$pos];
+	}
+}
+
+/** HTML ตำแหน่งผู้อนุมัติ (escape แล้ว มี <br> เมื่อ 2 แถว) */
+if (!function_exists('pm_memo_approver_pos_html')) {
+	function pm_memo_approver_pos_html(string $pos): string
+	{
+		$lines = pm_memo_approver_pos_lines($pos);
+		$out = [];
+		foreach ($lines as $ln) {
+			$out[] = htmlspecialchars((string)$ln, ENT_QUOTES, 'UTF-8');
+		}
+		return implode('<br>', $out);
+	}
+}
+
+/**
  * ได้เลขที่บันทึกข้อความ: ถ้าเคยออก/บันทึกแล้วใช้ค่าเดิม
  * ถ้าหน่วยงานมี unit_code ส่วนกลาง → ออกเลขใหม่จาก API แล้วบันทึก
  * ถ้ายังไม่ผูก unit_code → ใช้รูปแบบเก่า paper_name/paper_start (ไม่กระทบข้อมูลเดิม)
@@ -1143,11 +1401,16 @@ if (!function_exists('pm_build_approve_memo_payload_from_db')) {
 				}
 			}
 		}
-		$dept = ($unit !== '-' && $unit !== '' ? $unit : 'หน่วยงาน') . ' คณะเภสัชศาสตร์ โทร.44344';
-		$savedDept = trim((string)($pre['approve_memo_dept'] ?? ''));
-		if ($savedDept !== '') {
-			$dept = $savedDept;
-		}
+		$unitPhone = function_exists('pm_project_unit_phone')
+			? pm_project_unit_phone($db_Project, $codeUnit)
+			: '';
+		$dept = function_exists('pm_approve_memo_pick_dept')
+			? pm_approve_memo_pick_dept(
+				($unit !== '-' && $unit !== '' ? $unit : 'หน่วยงาน'),
+				$unitPhone,
+				trim((string)($pre['approve_memo_dept'] ?? ''))
+			)
+			: ((($unit !== '-' && $unit !== '' ? $unit : 'หน่วยงาน') . ' คณะเภสัชศาสตร์') . ($unitPhone !== '' ? (' โทร.' . $unitPhone) : ''));
 		$docNo = function_exists('pm_get_or_issue_approve_memo_doc_no')
 			? pm_get_or_issue_approve_memo_doc_no($db_Project, $project_id, $pre, '', $paperName, $paperStart)
 			: (function_exists('pm_unit_paper_doc_no')
@@ -1195,7 +1458,7 @@ if (!function_exists('pm_build_approve_memo_payload_from_db')) {
 			}
 		}
 
-		// ผู้เสนอ = หัวหน้าโครงการ
+		// ผู้เสนอ = หัวหน้าโครงการ (ตำแหน่งในบันทึกข้อความคงที่)
 		$proposerName = '';
 		$proposerPos = 'หัวหน้าโครงการ';
 		$proposerSid = 0;
@@ -1210,8 +1473,7 @@ if (!function_exists('pm_build_approve_memo_payload_from_db')) {
 			$keyEsc = mysqli_real_escape_string($db_person, $proposerKey);
 			$qHn = @mysqli_query(
 				$db_person,
-				"SELECT id, files_sig, position_code,
-				        CONCAT(TRIM(IFNULL(fname,'')),' ',TRIM(IFNULL(lname,''))) AS n
+				"SELECT id, files_sig, prefix_code, fname, lname
 				 FROM staff
 				 WHERE id='" . (int)$proposerKey . "'
 				    OR TRIM(CAST(IFNULL(code,'') AS CHAR))='" . $keyEsc . "'
@@ -1220,25 +1482,17 @@ if (!function_exists('pm_build_approve_memo_payload_from_db')) {
 			$rHn = $qHn ? mysqli_fetch_assoc($qHn) : null;
 			if ($rHn) {
 				$proposerSid = (int)($rHn['id'] ?? $proposerSid);
-				$proposerName = trim((string)($rHn['n'] ?? ''));
-				$pc = trim((string)($rHn['position_code'] ?? ''));
-				if ($pc !== '' && function_exists('getPosition')) {
-					$rp = getPosition($db_person, $pc);
-					if (is_array($rp) && trim((string)($rp['name'] ?? '')) !== '') {
-						$proposerPos = trim((string)$rp['name']);
-					}
-				}
+				$proposerName = function_exists('pm_memo_staff_display_name')
+					? pm_memo_staff_display_name(
+						$db_person,
+						(string)($rHn['prefix_code'] ?? ''),
+						(string)($rHn['fname'] ?? ''),
+						(string)($rHn['lname'] ?? '')
+					)
+					: trim(trim((string)($rHn['fname'] ?? '')) . ' ' . trim((string)($rHn['lname'] ?? '')));
 			}
 		}
-		if (function_exists('pm_chain_entered_position') && $proposerSid > 0) {
-			$typedProp = pm_chain_entered_position((string)($pre['operate_certifiers_json'] ?? ''), $proposerSid);
-			$typedPropLate = pm_chain_entered_position((string)($pre['operate_approvers_json'] ?? ''), $proposerSid);
-			if ($typedPropLate !== '') {
-				$proposerPos = $typedPropLate;
-			} elseif ($typedProp !== '') {
-				$proposerPos = $typedProp;
-			}
-		}
+		$proposerPos = 'หัวหน้าโครงการ';
 		$proposerDate = $date;
 
 		// ผู้อนุมัติล่าสุดจาก decision
@@ -1290,13 +1544,19 @@ if (!function_exists('pm_build_approve_memo_payload_from_db')) {
 		if ($approverSid > 0 && ($db_person instanceof mysqli)) {
 			$qAp = @mysqli_query(
 				$db_person,
-				"SELECT id, files_sig, position_dean, position_code,
-				        CONCAT(TRIM(IFNULL(fname,'')),' ',TRIM(IFNULL(lname,''))) AS n
+				"SELECT id, files_sig, position_dean, position_code, prefix_code, fname, lname
 				 FROM staff WHERE id='" . $approverSid . "' LIMIT 1"
 			);
 			$rAp = $qAp ? mysqli_fetch_assoc($qAp) : null;
 			if ($rAp) {
-				$approverName = trim((string)($rAp['n'] ?? ''));
+				$approverName = function_exists('pm_memo_staff_display_name')
+					? pm_memo_staff_display_name(
+						$db_person,
+						(string)($rAp['prefix_code'] ?? ''),
+						(string)($rAp['fname'] ?? ''),
+						(string)($rAp['lname'] ?? '')
+					)
+					: trim(trim((string)($rAp['fname'] ?? '')) . ' ' . trim((string)($rAp['lname'] ?? '')));
 				$pd = trim((string)($rAp['position_dean'] ?? ''));
 				if ($pd !== '' && function_exists('getPositionDean')) {
 					$rpd = getPositionDean($db_person, $pd);
