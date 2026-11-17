@@ -1,5 +1,6 @@
 <?php
 include_once(__DIR__ . '/../../config/config_db.php');
+require_once __DIR__ . '/memo_signature.php';
 
 /** Plan admin ขอเรียงผู้รับรองใหม่หลัง operate ครบ — ให้ได้ทั้งโครงการ status=1 และกรณีหลังตีกลับผู้ยื่นแล้วส่งคิวใหม่แล้ว (status=8) */
 if (!function_exists('pm_notify_allows_plan_admin_operate_rechain')) {
@@ -1072,6 +1073,18 @@ if (!function_exists('pm_memo_approver_pos_html')) {
  * ถ้าหน่วยงานมี unit_code ส่วนกลาง → ออกเลขใหม่จาก API แล้วบันทึก
  * ถ้ายังไม่ผูก unit_code → ใช้รูปแบบเก่า paper_name/paper_start (ไม่กระทบข้อมูลเดิม)
  */
+if (!function_exists('pm_approve_memo_doc_issue_error')) {
+	/** ข้อความ error ล่าสุดจากการออกเลขบันทึกข้อความ (ต่อ request) */
+	function pm_approve_memo_doc_issue_error(?string $set = null): string
+	{
+		static $err = '';
+		if ($set !== null) {
+			$err = trim($set);
+		}
+		return $err;
+	}
+}
+
 if (!function_exists('pm_get_or_issue_approve_memo_doc_no')) {
 	function pm_get_or_issue_approve_memo_doc_no(
 		$db_Project,
@@ -1081,6 +1094,7 @@ if (!function_exists('pm_get_or_issue_approve_memo_doc_no')) {
 		string $paperName = '',
 		string $paperStart = ''
 	): string {
+		pm_approve_memo_doc_issue_error('');
 		if (!($db_Project instanceof mysqli) || $project_id <= 0) {
 			return function_exists('pm_unit_paper_doc_no')
 				? pm_unit_paper_doc_no($paperName !== '' ? $paperName : 'อว', $paperStart, 1)
@@ -1089,15 +1103,21 @@ if (!function_exists('pm_get_or_issue_approve_memo_doc_no')) {
 		if (function_exists('pm_ensure_approve_memo_schema')) {
 			pm_ensure_approve_memo_schema($db_Project);
 		}
-		if (!is_array($pre)) {
-			$q = @mysqli_query(
-				$db_Project,
-				"SELECT id, code_unit, code_pre_project, name_project,
-				        IFNULL(approve_memo_doc_no,'') AS approve_memo_doc_no
-				 FROM pre_project WHERE id='" . (int)$project_id . "' LIMIT 1"
-			);
-			$pre = $q ? (mysqli_fetch_assoc($q) ?: []) : [];
+
+		// อ่านจากฐานเสมอ — อย่าเชื่อค่าใน $pre ที่อาจโหลดมาก่อน schema / ค้างค่าว่าง
+		$qFresh = @mysqli_query(
+			$db_Project,
+			"SELECT id, code_unit, code_pre_project, name_project,
+			        IFNULL(approve_memo_doc_no,'') AS approve_memo_doc_no
+			 FROM pre_project WHERE id='" . (int)$project_id . "' LIMIT 1"
+		);
+		$dbRow = $qFresh ? mysqli_fetch_assoc($qFresh) : null;
+		if (is_array($dbRow) && $dbRow) {
+			$pre = is_array($pre) ? array_merge($pre, $dbRow) : $dbRow;
+		} elseif (!is_array($pre)) {
+			$pre = [];
 		}
+
 		$existing = trim((string)($pre['approve_memo_doc_no'] ?? ''));
 		if ($existing !== '') {
 			return $existing;
@@ -1114,23 +1134,24 @@ if (!function_exists('pm_get_or_issue_approve_memo_doc_no')) {
 				: 'อว/ผ001';
 		}
 
-		try {
+		$code = trim((string)($pre['code_pre_project'] ?? ''));
+		if ($code === '') {
+			$code = 'P' . $project_id;
+		}
+		$name = trim((string)($pre['name_project'] ?? ''));
+		$subject = 'บันทึกข้อความขออนุมัติโครงการ ' . $code;
+		if ($name !== '') {
+			$subject .= ' ' . $name;
+		}
+		if ($requestedBy === '') {
+			$requestedBy = trim((string)($_SESSION['code'] ?? $_SESSION['r_email'] ?? 'planwise'));
+		}
+		if ($requestedBy === '') {
+			$requestedBy = 'planwise';
+		}
+
+		$attemptIssue = static function () use ($db_Project, $project_id, $orgUnitCode, $subject, $requestedBy): string {
 			require_once __DIR__ . '/document_number_client.php';
-			$code = trim((string)($pre['code_pre_project'] ?? ''));
-			if ($code === '') {
-				$code = 'P' . $project_id;
-			}
-			$name = trim((string)($pre['name_project'] ?? ''));
-			$subject = 'บันทึกข้อความขออนุมัติโครงการ ' . $code;
-			if ($name !== '') {
-				$subject .= ' ' . $name;
-			}
-			if ($requestedBy === '') {
-				$requestedBy = trim((string)($_SESSION['code'] ?? $_SESSION['r_email'] ?? 'planwise'));
-			}
-			if ($requestedBy === '') {
-				$requestedBy = 'planwise';
-			}
 			$issued = pm_document_number_issue(
 				$orgUnitCode,
 				$subject,
@@ -1141,7 +1162,7 @@ if (!function_exists('pm_get_or_issue_approve_memo_doc_no')) {
 			);
 			$full = trim((string)($issued['full_number'] ?? ''));
 			if ($full === '') {
-				throw new RuntimeException('empty full_number');
+				throw new RuntimeException('ระบบกลางไม่ออกเลขที่หนังสือ (empty full_number)');
 			}
 			$fullEsc = mysqli_real_escape_string($db_Project, $full);
 			$unitEsc = mysqli_real_escape_string($db_Project, $orgUnitCode);
@@ -1150,7 +1171,7 @@ if (!function_exists('pm_get_or_issue_approve_memo_doc_no')) {
 			if ($yearBe > 0 && $yearBe < 2400) {
 				$yearBe += 543;
 			}
-			@mysqli_query(
+			$upd = @mysqli_query(
 				$db_Project,
 				"UPDATE pre_project SET
 					approve_memo_doc_no='{$fullEsc}',
@@ -1161,6 +1182,9 @@ if (!function_exists('pm_get_or_issue_approve_memo_doc_no')) {
 				   AND IFNULL(approve_memo_doc_no,'')=''
 				 LIMIT 1"
 			);
+			if ($upd === false) {
+				throw new RuntimeException('บันทึกเลขที่หนังสือลงฐานไม่สำเร็จ: ' . (mysqli_error($db_Project) ?: 'unknown'));
+			}
 			// ถ้ามี race ให้อ่านค่าที่ชนะ
 			$q2 = @mysqli_query(
 				$db_Project,
@@ -1169,11 +1193,40 @@ if (!function_exists('pm_get_or_issue_approve_memo_doc_no')) {
 			$r2 = $q2 ? mysqli_fetch_assoc($q2) : null;
 			$saved = trim((string)($r2['d'] ?? ''));
 			return $saved !== '' ? $saved : $full;
-		} catch (Throwable $e) {
-			@error_log('pm_get_or_issue_approve_memo_doc_no: ' . $e->getMessage());
-			// ผูก unit_code แล้วต้องใช้รูปแบบจาก API ส่วนกลาง (MHESI…) เท่านั้น — ห้าม fallback เป็น อว/ผxxx
-			return '';
+		};
+
+		$lastErr = '';
+		for ($try = 1; $try <= 2; $try++) {
+			try {
+				// ก่อน retry: ถ้า process อื่นบันทึกสำเร็จแล้ว ใช้ค่านั้น
+				if ($try > 1) {
+					$qAgain = @mysqli_query(
+						$db_Project,
+						"SELECT IFNULL(approve_memo_doc_no,'') AS d FROM pre_project WHERE id='" . (int)$project_id . "' LIMIT 1"
+					);
+					$rAgain = $qAgain ? mysqli_fetch_assoc($qAgain) : null;
+					$again = trim((string)($rAgain['d'] ?? ''));
+					if ($again !== '') {
+						return $again;
+					}
+					if (function_exists('pm_document_number_access_token')) {
+						try {
+							pm_document_number_access_token(true);
+						} catch (Throwable $eTok) {
+							// ignore — issue จะ throw เอง
+						}
+					}
+					usleep(150000);
+				}
+				return $attemptIssue();
+			} catch (Throwable $e) {
+				$lastErr = trim($e->getMessage());
+				@error_log('pm_get_or_issue_approve_memo_doc_no try=' . $try . ': ' . $lastErr);
+			}
 		}
+		pm_approve_memo_doc_issue_error($lastErr !== '' ? $lastErr : 'ออกเลขที่หนังสือไม่สำเร็จ');
+		// ผูก unit_code แล้วต้องใช้รูปแบบจาก API ส่วนกลาง (MHESI…) เท่านั้น — ห้าม fallback เป็น อว/ผxxx
+		return '';
 	}
 }
 
@@ -1419,13 +1472,9 @@ if (!function_exists('pm_build_approve_memo_payload_from_db')) {
 
 		$amt = isset($pre['notify_approved_budget']) ? (float)$pre['notify_approved_budget'] : 0.0;
 		if ($amt <= 0) {
-			$qSum = @mysqli_query(
-				$db_Project,
-				"SELECT IFNULL(SUM(pa.total),0) AS t FROM project_activity_budget pa
-				 WHERE pa.code_pre_project='" . $project_id . "' AND pa.status!='99'"
-			);
-			$rSum = $qSum ? mysqli_fetch_assoc($qSum) : null;
-			$amt = (float)($rSum['t'] ?? 0);
+			$amt = function_exists('pm_sum_active_activity_budget')
+				? pm_sum_active_activity_budget($db_Project, (int)$project_id)
+				: 0.0;
 		}
 		$budget = number_format($amt, 0, '.', ',');
 		$budgetSrc = function_exists('resolveProjectBudgetSourceForDisplay')
@@ -1573,26 +1622,8 @@ if (!function_exists('pm_build_approve_memo_payload_from_db')) {
 			}
 		}
 
-		$pathSigBase = isset($GLOBALS['path_sig']) ? rtrim((string)$GLOBALS['path_sig'], '/') : '';
-		if ($pathSigBase === '' && !empty($GLOBALS['path_picture'])) {
-			$pathSigBase = preg_replace('#/files_person$#', '/files_sig', rtrim((string)$GLOBALS['path_picture'], '/'));
-		}
-		if ($pathSigBase === '') {
-			$pathSigBase = 'https://backoffice.pharmacy.cmu.ac.th/person/files_sig';
-		}
-		$buildSigUrl = static function ($file, $base) {
-			$file = trim((string)$file);
-			$base = rtrim((string)$base, '/');
-			if ($file === '' || $base === '') {
-				return '';
-			}
-			if (preg_match('#^https?://#i', $file)) {
-				return $file;
-			}
-			$file = preg_replace('#^files_sig/#i', '', $file);
-			return $base . '/' . ltrim($file, '/');
-		};
-		$resolveSig = static function ($db_person, $staffId) use ($pathSigBase, $buildSigUrl) {
+		$pathSigBase = trim((string)($GLOBALS['linkSignPerson'] ?? $GLOBALS['path_sig'] ?? ''));
+		$resolveSig = static function ($db_person, $staffId) use ($pathSigBase) {
 			$staffId = (int)$staffId;
 			if ($staffId <= 0 || !($db_person instanceof mysqli)) {
 				return '';
@@ -1600,7 +1631,7 @@ if (!function_exists('pm_build_approve_memo_payload_from_db')) {
 			$q = @mysqli_query($db_person, "SELECT files_sig FROM staff WHERE id='" . $staffId . "' LIMIT 1");
 			$r = $q ? mysqli_fetch_assoc($q) : null;
 			$file = trim((string)($r['files_sig'] ?? ''));
-			return $buildSigUrl($file, $pathSigBase);
+			return pm_approve_memo_signature_url($file, $pathSigBase);
 		};
 		$proposerSig = $resolveSig($db_person, $proposerSid);
 		$approverSig = $resolveSig($db_person, $approverSid);
@@ -5588,12 +5619,12 @@ if (!function_exists('pm_project_budget_amount_caps')) {
 				$out['approved'] = round((float)$r['notify_approved_budget'], 2);
 			}
 		}
-		$qe = @mysqli_query(
-			$db_Project,
-			"SELECT IFNULL(SUM(total),0) AS t FROM project_activity_budget WHERE code_pre_project='" . $projectId . "' AND status!='99'"
+		$out['expense'] = round(
+			function_exists('pm_sum_active_activity_budget')
+				? pm_sum_active_activity_budget($db_Project, (int)$projectId)
+				: 0.0,
+			2
 		);
-		$re = $qe ? mysqli_fetch_assoc($qe) : null;
-		$out['expense'] = round((float)($re['t'] ?? 0), 2);
 		return $out;
 	}
 }
@@ -5971,6 +6002,33 @@ function getProjectActivityKpiList($db_connection, $id)
     }
     return $list; // คืนค่าเป็น array ของหลายแถว
 }
+/**
+ * รวมงบรายกิจกรรมของโครงการ — ไม่นับงบของกิจกรรมที่ soft-delete (status=99)
+ * @param string $projectIdExpr SQL expression ของรหัสโครงการ เช่น p.id หรือ 137
+ */
+if (!function_exists('pm_sql_sum_active_activity_budget')) {
+	function pm_sql_sum_active_activity_budget(string $projectIdExpr = 'p.id'): string
+	{
+		return "IFNULL((SELECT SUM(pa.total)"
+			. " FROM project_activity_budget pa"
+			. " INNER JOIN project_activity act ON act.id = pa.code_activity AND act.status != '99'"
+			. " WHERE pa.code_pre_project = " . $projectIdExpr
+			. " AND pa.status != '99'), 0)";
+	}
+}
+if (!function_exists('pm_sum_active_activity_budget')) {
+	function pm_sum_active_activity_budget($db_Project, int $project_id): float
+	{
+		$pid = (int)$project_id;
+		if ($pid <= 0 || !$db_Project) {
+			return 0.0;
+		}
+		$q = @mysqli_query($db_Project, 'SELECT ' . pm_sql_sum_active_activity_budget((string)$pid) . ' AS t');
+		$r = ($q && ($row = mysqli_fetch_assoc($q))) ? $row : null;
+		return (float)($r['t'] ?? 0);
+	}
+}
+
 function getProjectActivityBudgetList($db_connection, $id)
 {
     $id = mysqli_real_escape_string($db_connection, $id); // ป้องกัน SQL Injection
@@ -5990,7 +6048,11 @@ function getProjectActivityBudgetALL($db_connection, $id)
 {
     $id = mysqli_real_escape_string($db_connection, $id); // ป้องกัน SQL Injection
 
-    $query = "SELECT * FROM project_activity_budget WHERE code_pre_project = '$id'  AND status != '99' ORDER BY id ASC";
+    // ไม่ดึงงบของกิจกรรมที่ลบแล้ว (กันยอดรวมเพี้ยนหลัง soft-delete กิจกรรม)
+    $query = "SELECT pa.* FROM project_activity_budget pa"
+        . " INNER JOIN project_activity act ON act.id = pa.code_activity AND act.status != '99'"
+        . " WHERE pa.code_pre_project = '$id' AND pa.status != '99'"
+        . " ORDER BY pa.id ASC";
     $result = mysqli_query($db_connection, $query);
 
     $list = [];
@@ -9119,7 +9181,7 @@ function getProjectDraftList($db, $year, $staffcode)
     $sql = "
         SELECT p.id, p.code_pre_project, p.name_project,
                IFNULL(c.code_consistency, '-') AS consistency_text,
-               IFNULL((SELECT SUM(total) FROM project_activity_budget pa WHERE pa.code_pre_project = p.id AND pa.status != '99'), 0) AS budget
+               " . pm_sql_sum_active_activity_budget('p.id') . " AS budget
         FROM pre_project p
         LEFT JOIN project_consistency c ON p.id = c.project_id AND c.status != '99'
         WHERE p.year_project = '$year'
@@ -9155,7 +9217,7 @@ function getOverviewProjectList($db_Project, $years_select, $code_unit_filter = 
     // แล้วหล่นไปข้อความ B2 ผู้ตรวจสอบหน่วยงาน ผิดจากสถานะจริง
     $sql = "
         SELECT p.*,
-               IFNULL((SELECT SUM(pa.total) FROM project_activity_budget pa WHERE pa.code_pre_project = p.id AND pa.status != '99'), 0) AS budget_total,
+               " . pm_sql_sum_active_activity_budget('p.id') . " AS budget_total,
                IFNULL((
                    SELECT SUM(CAST(IFNULL(l.amount, 0) AS DECIMAL(18, 2)))
                    FROM project_budget_disburse_line l
@@ -9459,7 +9521,7 @@ function getManageableProjectList($db_Project, $years_select, $staff_id, $staff_
 
     $sql = "
         SELECT p.*,
-               IFNULL((SELECT SUM(pa.total) FROM project_activity_budget pa WHERE pa.code_pre_project = p.id AND pa.status != '99'), 0) AS budget_total
+               " . pm_sql_sum_active_activity_budget('p.id') . " AS budget_total
         FROM pre_project p
         WHERE $where
         ORDER BY p.code_pre_project ASC
@@ -9496,7 +9558,7 @@ function pm_append_include_returned_projects_for_submitter($db_Project, array $p
     $qRet = @mysqli_query(
         $db_Project,
         "SELECT p.*,
-                IFNULL((SELECT SUM(pa.total) FROM project_activity_budget pa WHERE pa.code_pre_project = p.id AND pa.status != '99'), 0) AS budget_total
+                " . pm_sql_sum_active_activity_budget('p.id') . " AS budget_total
          FROM pre_project p
          INNER JOIN project_include_request_item i ON i.project_id = p.id
          INNER JOIN project_include_request ir ON ir.id = i.request_id
@@ -9594,14 +9656,9 @@ function buildIncludeRequestSummaryProjectBuckets($db_Project, $db_KPI, $request
             ? pmProjectKpiDisplayLabels($db_Project, $db_KPI, $pid)
             : [];
 
-        $budgetTotal = 0;
-        $qBt = @mysqli_query(
-            $db_Project,
-            "SELECT IFNULL(SUM(pa.total),0) AS t FROM project_activity_budget pa WHERE pa.code_pre_project='" . $pid . "' AND pa.status!='99'"
-        );
-        if ($qBt && ($rBt = mysqli_fetch_assoc($qBt))) {
-            $budgetTotal = (float)($rBt['t'] ?? 0);
-        }
+        $budgetTotal = function_exists('pm_sum_active_activity_budget')
+            ? pm_sum_active_activity_budget($db_Project, (int)$pid)
+            : 0.0;
 
         $buckets[$bid]['items'][] = [
             'project_id' => $pid,

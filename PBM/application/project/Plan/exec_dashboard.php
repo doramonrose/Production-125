@@ -53,10 +53,11 @@ try {
 			IFNULL(pb.b, 0) AS budget_total
 		FROM pre_project p
 		LEFT JOIN (
-			SELECT code_pre_project, IFNULL(SUM(total),0) AS b
-			FROM project_activity_budget
-			WHERE status!='99'
-			GROUP BY code_pre_project
+			SELECT pa.code_pre_project, IFNULL(SUM(pa.total),0) AS b
+			FROM project_activity_budget pa
+			INNER JOIN project_activity act ON act.id = pa.code_activity AND act.status != '99'
+			WHERE pa.status!='99'
+			GROUP BY pa.code_pre_project
 		) pb ON pb.code_pre_project = p.id
 		WHERE p.status!='99'
 		  AND p.year_project='" . $yearsEsc . "'

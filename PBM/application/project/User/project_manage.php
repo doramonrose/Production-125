@@ -3377,6 +3377,11 @@ if ($op === 'save_data_activity_project_ajax') {
 		}
 		$aid = (int)$project_activity_id;
 		$ok = mysqli_query($db_Project, "UPDATE project_activity SET status='99', staff_insert='".(int)$sid."', dates=NOW() WHERE id='".$aid."' LIMIT 1");
+		if ($ok) {
+			// ลบงบ/เป้าของกิจกรรมด้วย — ไม่งั้นยอดงบในรายการโครงการยังรวมงบกิจกรรมที่ลบแล้ว
+			@mysqli_query($db_Project, "UPDATE project_activity_budget SET status='99', staff_insert='".(int)$sid."', dates=NOW() WHERE code_activity='".$aid."' AND status!='99'");
+			@mysqli_query($db_Project, "UPDATE project_activity_target SET status='99', staff_insert='".(int)$sid."', dates=NOW() WHERE code_activity='".$aid."' AND status!='99'");
+		}
 		echo json_encode(['ok' => $ok ? 1 : 0, 'msg' => $ok ? '' : (mysqli_error($db_Project) ?: 'ลบไม่สำเร็จ')], JSON_UNESCAPED_UNICODE);
 		exit;
 	}
@@ -7618,6 +7623,108 @@ if ($op === 'save_admin_tags_ajax') {
 	}
 }
 
+if ($op === 'issue_approve_memo_doc_no_ajax') {
+	header('Content-Type: application/json; charset=utf-8');
+	try {
+		while (ob_get_level()) {
+			@ob_end_clean();
+		}
+		if (function_exists('pm_ensure_approve_memo_schema')) {
+			pm_ensure_approve_memo_schema($db_Project);
+		}
+		$project_id = isset($_POST['project_id']) ? (int)$_POST['project_id'] : 0;
+		if ($project_id <= 0) {
+			echo json_encode(['ok' => 0, 'msg' => 'ไม่พบโครงการ'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		if (function_exists('pm_exit_if_project_plan_closed')) {
+			pm_exit_if_project_plan_closed($db_Project, $project_id);
+		}
+		$sess_email = $_SESSION['r_email'] ?? '';
+		$sess_code = $_SESSION['code'] ?? '';
+		$sid = 0;
+		$staff_code = '';
+		$unit_code = '';
+		if ($sess_email !== '' && $sess_code !== '') {
+			$st = mysqli_prepare($db_person, 'SELECT id, code, unit_code FROM staff WHERE email = ? AND code = ? LIMIT 1');
+			mysqli_stmt_bind_param($st, 'ss', $sess_email, $sess_code);
+			mysqli_stmt_execute($st);
+			$rs = mysqli_stmt_get_result($st);
+			$rw = $rs ? mysqli_fetch_assoc($rs) : null;
+			if ($rw) {
+				$sid = (int)($rw['id'] ?? 0);
+				$staff_code = (string)($rw['code'] ?? '');
+				$unit_code = (string)($rw['unit_code'] ?? '');
+			}
+		}
+		$canView = (defined('PLAN_ADMIN') && PLAN_ADMIN)
+			|| ($sid > 0 && function_exists('staffCanViewPreProjectManageDetail') && staffCanViewPreProjectManageDetail($db_Project, $project_id, $sid, $staff_code, $unit_code));
+		if (!$canView) {
+			echo json_encode(['ok' => 0, 'msg' => 'ไม่มีสิทธิ์ดูบันทึกข้อความนี้'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		$pre = function_exists('getPreProjectID') ? getPreProjectID($db_Project, $project_id) : null;
+		if (!is_array($pre) || !(int)($pre['id'] ?? 0)) {
+			echo json_encode(['ok' => 0, 'msg' => 'ไม่พบโครงการ'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		$paperName = 'อว';
+		$paperStart = 'ผ001';
+		$codeUnit = trim((string)($pre['code_unit'] ?? ''));
+		if ($codeUnit !== '' && function_exists('planSetUnitColumnSet')) {
+			$cols = planSetUnitColumnSet($db_Project);
+			$sel = ['name'];
+			if (!empty($cols['paper_name'])) {
+				$sel[] = 'paper_name';
+			}
+			if (!empty($cols['paper_start'])) {
+				$sel[] = 'paper_start';
+			}
+			$esc = mysqli_real_escape_string($db_Project, $codeUnit);
+			$qU = @mysqli_query(
+				$db_Project,
+				'SELECT ' . implode(',', $sel) . " FROM set_unit
+				 WHERE (CAST(id AS CHAR)='{$esc}' OR TRIM(CAST(IFNULL(code,'') AS CHAR))='{$esc}')
+				   AND IFNULL(status,'') NOT IN ('99','99.0')
+				 LIMIT 1"
+			);
+			$rU = $qU ? mysqli_fetch_assoc($qU) : null;
+			if ($rU) {
+				if (!empty($cols['paper_name']) && trim((string)($rU['paper_name'] ?? '')) !== '') {
+					$paperName = trim((string)$rU['paper_name']);
+				}
+				if (!empty($cols['paper_start']) && trim((string)($rU['paper_start'] ?? '')) !== '') {
+					$paperStart = trim((string)$rU['paper_start']);
+				}
+			}
+		}
+		$docNo = function_exists('pm_get_or_issue_approve_memo_doc_no')
+			? pm_get_or_issue_approve_memo_doc_no(
+				$db_Project,
+				$project_id,
+				$pre,
+				trim((string)($_SESSION['code'] ?? $_SESSION['r_email'] ?? '')),
+				$paperName,
+				$paperStart
+			)
+			: '';
+		if ($docNo === '') {
+			$err = function_exists('pm_approve_memo_doc_issue_error') ? pm_approve_memo_doc_issue_error() : '';
+			echo json_encode([
+				'ok' => 0,
+				'msg' => $err !== '' ? $err : 'ออกเลขที่หนังสือไม่สำเร็จ',
+				'doc_no' => '',
+			], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		echo json_encode(['ok' => 1, 'doc_no' => $docNo], JSON_UNESCAPED_UNICODE);
+		exit;
+	} catch (Throwable $e) {
+		echo json_encode(['ok' => 0, 'msg' => 'เกิดข้อผิดพลาด: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
+		exit;
+	}
+}
+
 if ($op === 'save_approve_memo_header_ajax') {
 	header('Content-Type: application/json; charset=utf-8');
 	try {
@@ -8269,7 +8376,7 @@ if ($op === 'request_change_project_ajax') {
 			? resolveProjectBudgetSourceForDisplay($db_Project, $project_id)
 			: '-';
 		$budget_amount = 0.0;
-		$qSum = @mysqli_query($db_Project, "SELECT IFNULL(SUM(pa.total),0) AS t FROM project_activity_budget pa WHERE pa.code_pre_project='" . (int)$project_id . "' AND pa.status!='99'");
+		$qSum = @mysqli_query($db_Project, "SELECT " . pm_sql_sum_active_activity_budget((string)(int)$project_id) . " AS t");
 		$rSum = $qSum ? mysqli_fetch_assoc($qSum) : null;
 		$budget_amount = (float)($rSum['t'] ?? 0);
 
@@ -8529,7 +8636,7 @@ if ($op === 'request_cancel_project_ajax' || $op === 'get_cancel_request_ajax' |
 			? resolveProjectBudgetSourceForDisplay($db_Project, $project_id)
 			: '-';
 		$budget_amount = 0.0;
-		$qSum = @mysqli_query($db_Project, "SELECT IFNULL(SUM(pa.total),0) AS t FROM project_activity_budget pa WHERE pa.code_pre_project='" . (int)$project_id . "' AND pa.status!='99'");
+		$qSum = @mysqli_query($db_Project, "SELECT " . pm_sql_sum_active_activity_budget((string)(int)$project_id) . " AS t");
 		$rSum = $qSum ? mysqli_fetch_assoc($qSum) : null;
 		$budget_amount = (float)($rSum['t'] ?? 0);
 
@@ -15749,7 +15856,7 @@ if ($op === 'add_project') {
 					}
 					$pm_chg_pending = function_exists('pm_project_pending_change_request_id')
 						&& pm_project_pending_change_request_id($db_Project, (int)$edit_project_id) > 0;
-					$__sumChg = @mysqli_query($db_Project, "SELECT IFNULL(SUM(pa.total),0) AS t FROM project_activity_budget pa WHERE pa.code_pre_project='" . (int)$edit_project_id . "' AND pa.status!='99'");
+					$__sumChg = @mysqli_query($db_Project, "SELECT " . pm_sql_sum_active_activity_budget((string)(int)$edit_project_id) . " AS t");
 					$__srChg = $__sumChg ? mysqli_fetch_assoc($__sumChg) : null;
 					$pm_chg_budget_fmt = number_format((float)($__srChg['t'] ?? 0), 0, '.', ',');
 					$__cbChg = trim((string)($saved_pre['code_budget'] ?? ''));
@@ -16016,7 +16123,7 @@ if ($op === 'add_project') {
 						if ($__uc !== '' && isset($unit_names[$__uc])) {
 							$pm_ro_memo_unit = (string)$unit_names[$__uc];
 						}
-						$__sum = @mysqli_query($db_Project, "SELECT IFNULL(SUM(pa.total),0) AS t FROM project_activity_budget pa WHERE pa.code_pre_project='" . (int)$edit_project_id . "' AND pa.status!='99'");
+						$__sum = @mysqli_query($db_Project, "SELECT " . pm_sql_sum_active_activity_budget((string)(int)$edit_project_id) . " AS t");
 						$__sr = $__sum ? mysqli_fetch_assoc($__sum) : null;
 						$__tot = (float)($__sr['t'] ?? 0);
 						$pm_ro_memo_budget_fmt = number_format($__tot, 0, '.', ',');
@@ -19607,7 +19714,7 @@ if ($op === 'add_project') {
 						if ($__ucp !== '' && isset($unit_names[$__ucp])) {
 							$pm_pa_memo_unit = (string)$unit_names[$__ucp];
 						}
-						$__sump = @mysqli_query($db_Project, "SELECT IFNULL(SUM(pa.total),0) AS t FROM project_activity_budget pa WHERE pa.code_pre_project='" . (int)$edit_project_id . "' AND pa.status!='99'");
+						$__sump = @mysqli_query($db_Project, "SELECT " . pm_sql_sum_active_activity_budget((string)(int)$edit_project_id) . " AS t");
 						$__srp = $__sump ? mysqli_fetch_assoc($__sump) : null;
 						$__totp = (float)($__srp['t'] ?? 0);
 						$pm_pa_memo_budget_fmt = number_format($__totp, 0, '.', ',');
@@ -20666,7 +20773,7 @@ if ($op === 'add_project') {
 
 						$__amtAm = isset($saved_pre['notify_approved_budget']) ? (float)$saved_pre['notify_approved_budget'] : 0.0;
 						if ($__amtAm <= 0) {
-							$__sumAm = @mysqli_query($db_Project, "SELECT IFNULL(SUM(pa.total),0) AS t FROM project_activity_budget pa WHERE pa.code_pre_project='" . (int)$edit_project_id . "' AND pa.status!='99'");
+							$__sumAm = @mysqli_query($db_Project, "SELECT " . pm_sql_sum_active_activity_budget((string)(int)$edit_project_id) . " AS t");
 							$__srAm = $__sumAm ? mysqli_fetch_assoc($__sumAm) : null;
 							$__amtAm = (float)($__srAm['t'] ?? 0);
 						}
@@ -20905,17 +21012,26 @@ if ($op === 'add_project') {
 						$pm_am_proposer_sig_alts = (array)($pm_am_proposer_sig_pack['alts'] ?? []);
 						$pm_am_approver_sig = (string)($pm_am_approver_sig_pack['url'] ?? '');
 						$pm_am_approver_sig_alts = (array)($pm_am_approver_sig_pack['alts'] ?? []);
-						// ถ้าใช้ decided_by ให้ sync ชื่อให้ตรงกับคนที่ลงนามจริง
+						// ถ้าใช้ decided_by ให้ sync ชื่อให้ตรงกับคนที่ลงนามจริง (คำนำหน้าแบบเต็ม)
 						if ($pm_approve_memo_approver_sid > 0) {
 							$qApNm = @mysqli_query(
 								$db_person,
-								"SELECT CONCAT(TRIM(IFNULL(fname,'')),' ',TRIM(IFNULL(lname,''))) AS n
+								"SELECT prefix_code, fname, lname
 								 FROM staff WHERE id='" . (int)$pm_approve_memo_approver_sid . "' LIMIT 1"
 							);
 							$rApNm = $qApNm ? mysqli_fetch_assoc($qApNm) : null;
-							$__apNm = trim((string)($rApNm['n'] ?? ''));
-							if ($__apNm !== '') {
-								$pm_approve_memo_approver_name = $__apNm;
+							if ($rApNm) {
+								$__apNm = function_exists('pm_memo_staff_display_name')
+									? pm_memo_staff_display_name(
+										$db_person,
+										(string)($rApNm['prefix_code'] ?? ''),
+										(string)($rApNm['fname'] ?? ''),
+										(string)($rApNm['lname'] ?? '')
+									)
+									: trim(trim((string)($rApNm['fname'] ?? '')) . ' ' . trim((string)($rApNm['lname'] ?? '')));
+								if ($__apNm !== '') {
+									$pm_approve_memo_approver_name = $__apNm;
+								}
 							}
 						}
 					}
@@ -29336,7 +29452,18 @@ if ($op === 'add_project') {
 							</div>
 							<div class="pm-am-meta-row is-split">
 								<div class="pm-am-lbl">ที่</div>
-								<div class="pm-am-subject" id="pmAmDocNo"><?= htmlspecialchars($pm_am_doc_no ?? '', ENT_QUOTES, 'UTF-8') ?></div>
+								<div class="pm-am-subject" id="pmAmDocNo" data-project-id="<?= (int)($edit_project_id ?? 0) ?>" data-issue-busy="0"><?php
+									$__pmAmDocShow = trim((string)($pm_am_doc_no ?? ''));
+									if ($__pmAmDocShow !== '') {
+										echo htmlspecialchars($__pmAmDocShow, ENT_QUOTES, 'UTF-8');
+									} else {
+										$__pmAmDocErr = function_exists('pm_approve_memo_doc_issue_error') ? pm_approve_memo_doc_issue_error() : '';
+										echo '<span class="text-muted pm-am-doc-pending">กำลังออกเลขที่…</span>';
+										if ($__pmAmDocErr !== '') {
+											echo '<span class="d-none pm-am-doc-err">' . htmlspecialchars($__pmAmDocErr, ENT_QUOTES, 'UTF-8') . '</span>';
+										}
+									}
+								?></div>
 								<div class="pm-am-lbl">วันที่</div>
 								<input type="text" class="pm-am-edit" id="pmAmDate" data-saved="<?= htmlspecialchars($pm_am_date ?? '', ENT_QUOTES, 'UTF-8') ?>" value="<?= htmlspecialchars($pm_am_date ?? '', ENT_QUOTES, 'UTF-8') ?>">
 							</div>
@@ -29441,6 +29568,55 @@ if ($op === 'add_project') {
 				img.style.display = 'none';
 			}
 		};
+		function pmAmDocNoText(){
+			var el = document.getElementById('pmAmDocNo');
+			if (!el) return '';
+			var pending = el.querySelector('.pm-am-doc-pending, .pm-am-doc-fail');
+			if (pending) return '';
+			return String(el.textContent || '').trim();
+		}
+		function pmAmEnsureDocNo(opts){
+			opts = opts || {};
+			var el = document.getElementById('pmAmDocNo');
+			if (!el) {
+				return $.Deferred().reject('no-el').promise();
+			}
+			var cur = pmAmDocNoText();
+			if (cur !== '') {
+				return $.Deferred().resolve(cur).promise();
+			}
+			if (String(el.getAttribute('data-issue-busy') || '') === '1') {
+				return $.Deferred().reject('busy').promise();
+			}
+			var projectId = parseInt(el.getAttribute('data-project-id') || ($('#pmAmPaper').attr('data-project-id') || '0'), 10) || 0;
+			if (projectId <= 0) {
+				return $.Deferred().reject('no-project').promise();
+			}
+			el.setAttribute('data-issue-busy', '1');
+			el.innerHTML = '<span class="text-muted pm-am-doc-pending">กำลังออกเลขที่…</span>';
+			return $.ajax({
+				url: (window.location && window.location.pathname) ? String(window.location.pathname) : '',
+				method: 'POST',
+				dataType: 'json',
+				data: { op: 'issue_approve_memo_doc_no_ajax', project_id: projectId }
+			}).then(function(res){
+				el.setAttribute('data-issue-busy', '0');
+				if (res && Number(res.ok) === 1 && String(res.doc_no || '').trim() !== '') {
+					el.textContent = String(res.doc_no).trim();
+					return String(res.doc_no).trim();
+				}
+				var msg = (res && res.msg) ? String(res.msg) : 'ออกเลขที่หนังสือไม่สำเร็จ';
+				el.innerHTML = '<span class="text-danger pm-am-doc-fail" title="'+ $('<div>').text(msg).html() +'">ออกเลขไม่สำเร็จ — คลิกเพื่อลองใหม่</span>';
+				if (opts.alert !== false && typeof Swal !== 'undefined') {
+					Swal.fire({ icon: 'warning', title: 'ออกเลขที่หนังสือไม่สำเร็จ', text: msg });
+				}
+				return $.Deferred().reject(msg).promise();
+			}, function(){
+				el.setAttribute('data-issue-busy', '0');
+				el.innerHTML = '<span class="text-danger pm-am-doc-fail">ออกเลขไม่สำเร็จ — คลิกเพื่อลองใหม่</span>';
+				return $.Deferred().reject('network').promise();
+			});
+		}
 		function pmAmShowModal(){
 			var $modal = $('#modalApproveOperateMemo');
 			if (!$modal.length) {
@@ -29451,14 +29627,21 @@ if ($op === 'add_project') {
 			try { $modal.appendTo(document.body); } catch (e0) {}
 			if (typeof $.fn.modal === 'function') {
 				$modal.modal('show');
-				return;
+			} else {
+				$modal.addClass('show').css('display','block').attr('aria-hidden','false');
+				if (!$('.modal-backdrop.pm-am-backdrop').length) {
+					$('<div class="modal-backdrop fade show pm-am-backdrop"></div>').appendTo(document.body);
+				}
+				$('body').addClass('modal-open');
 			}
-			$modal.addClass('show').css('display','block').attr('aria-hidden','false');
-			if (!$('.modal-backdrop.pm-am-backdrop').length) {
-				$('<div class="modal-backdrop fade show pm-am-backdrop"></div>').appendTo(document.body);
-			}
-			$('body').addClass('modal-open');
+			pmAmEnsureDocNo({ alert: false });
 		}
+		$(document).on('click', '#pmAmDocNo .pm-am-doc-fail', function(){
+			pmAmEnsureDocNo({ alert: true });
+		});
+		$('#modalApproveOperateMemo').on('shown.bs.modal', function(){
+			pmAmEnsureDocNo({ alert: false });
+		});
 		function pmAmHideModal(){
 			var $modal = $('#modalApproveOperateMemo');
 			if (typeof $.fn.modal === 'function') {
@@ -29584,38 +29767,45 @@ if ($op === 'add_project') {
 		$(document).on('click', '#pmAmPrintBtn', function(e){
 			e.preventDefault();
 			if (pmAmNeedSaveFirst()) return;
-			try {
-				var clone = pmAmClonePaper();
-				if (!clone) {
-					alert('ไม่พบเนื้อหาบันทึกข้อความ');
-					return;
-				}
-				var mount = document.getElementById('pmAmPrintMount');
-				if (!mount) {
-					mount = document.createElement('div');
-					mount.id = 'pmAmPrintMount';
-					document.body.appendChild(mount);
-				}
-				mount.innerHTML = '';
-				mount.appendChild(clone);
-				if (typeof window.pmAmPlacePrintFooter === 'function') {
-					window.pmAmPlacePrintFooter(mount);
-				}
+			var $btn = $(this);
+			if ($btn.data('busy')) return;
+			$btn.data('busy', 1);
+			pmAmEnsureDocNo({ alert: true }).always(function(){
+				$btn.data('busy', 0);
+			}).done(function(){
+				try {
+					var clone = pmAmClonePaper();
+					if (!clone) {
+						alert('ไม่พบเนื้อหาบันทึกข้อความ');
+						return;
+					}
+					var mount = document.getElementById('pmAmPrintMount');
+					if (!mount) {
+						mount = document.createElement('div');
+						mount.id = 'pmAmPrintMount';
+						document.body.appendChild(mount);
+					}
+					mount.innerHTML = '';
+					mount.appendChild(clone);
+					if (typeof window.pmAmPlacePrintFooter === 'function') {
+						window.pmAmPlacePrintFooter(mount);
+					}
 
-				var cleanup = function(){
+					var cleanup = function(){
+						document.body.classList.remove('pm-am-printing');
+						if (mount) mount.innerHTML = '';
+						window.removeEventListener('afterprint', cleanup);
+					};
+					window.addEventListener('afterprint', cleanup);
+					document.body.classList.add('pm-am-printing');
+					setTimeout(function(){
+						try { window.print(); } catch (e1) { cleanup(); }
+					}, 80);
+				} catch (e2) {
 					document.body.classList.remove('pm-am-printing');
-					if (mount) mount.innerHTML = '';
-					window.removeEventListener('afterprint', cleanup);
-				};
-				window.addEventListener('afterprint', cleanup);
-				document.body.classList.add('pm-am-printing');
-				setTimeout(function(){
-					try { window.print(); } catch (e1) { cleanup(); }
-				}, 80);
-			} catch (e2) {
-				document.body.classList.remove('pm-am-printing');
-				alert('พิมพ์ไม่สำเร็จ');
-			}
+					alert('พิมพ์ไม่สำเร็จ');
+				}
+			});
 		});
 		$(document).on('click', '#pmAmPdfBtn', function(e){
 			e.preventDefault();
@@ -29637,51 +29827,55 @@ if ($op === 'add_project') {
 				return String($el.text() || '').trim() || (fallback || '');
 			}
 
-			var payload = {
-				project_id: projectId,
-				dept: valText('#pmAmDept'),
-				doc_no: valText('#pmAmDocNo'),
-				date: valText('#pmAmDate'),
-				unit: valText('#pmAmUnitInline', 'หน่วยงาน'),
-				code: valText('#pmAmCodeVal'),
-				name: valText('#pmAmNameVal'),
-				budget: valText('#pmAmBudgetVal'),
-				budget_src: valText('#pmAmBudgetSrcVal'),
-				proposer_name: valText('#pmAmProposerName'),
-				proposer_pos: 'หัวหน้าโครงการ',
-				proposer_date: '',
-				proposer_sig: String($('#pmAmProposerSig').prop('src') || $('#pmAmProposerSig').attr('src') || ''),
-				approver_name: valText('#pmAmApproverName'),
-				approver_pos: String($('#pmAmApproverPos').attr('data-pos') || valText('#pmAmApproverPos') || ''),
-				approver_date: '',
-				approver_sig: String($('#pmAmApproverSig').prop('src') || $('#pmAmApproverSig').attr('src') || '')
-			};
-
-			try {
-				var form = document.createElement('form');
-				form.method = 'POST';
-				form.action = (String(location.pathname || '').indexOf('/Plan/') !== -1)
-					? '../User/approve_memo_pdf.php'
-					: 'approve_memo_pdf.php';
-				form.target = '_blank';
-				form.style.display = 'none';
-				Object.keys(payload).forEach(function(k){
-					var input = document.createElement('input');
-					input.type = 'hidden';
-					input.name = k;
-					input.value = payload[k] == null ? '' : String(payload[k]);
-					form.appendChild(input);
-				});
-				document.body.appendChild(form);
-				form.submit();
-				setTimeout(function(){
-					try { document.body.removeChild(form); } catch (eR) {}
-					$btn.data('busy', 0).prop('disabled', false).html(btnHtml);
-				}, 800);
-			} catch (eSub) {
+			pmAmEnsureDocNo({ alert: true }).fail(function(){
 				$btn.data('busy', 0).prop('disabled', false).html(btnHtml);
-				alert('สร้าง PDF ไม่สำเร็จ');
-			}
+			}).done(function(docNo){
+				var payload = {
+					project_id: projectId,
+					dept: valText('#pmAmDept'),
+					doc_no: String(docNo || pmAmDocNoText() || ''),
+					date: valText('#pmAmDate'),
+					unit: valText('#pmAmUnitInline', 'หน่วยงาน'),
+					code: valText('#pmAmCodeVal'),
+					name: valText('#pmAmNameVal'),
+					budget: valText('#pmAmBudgetVal'),
+					budget_src: valText('#pmAmBudgetSrcVal'),
+					proposer_name: valText('#pmAmProposerName'),
+					proposer_pos: 'หัวหน้าโครงการ',
+					proposer_date: '',
+					proposer_sig: String($('#pmAmProposerSig').prop('src') || $('#pmAmProposerSig').attr('src') || ''),
+					approver_name: valText('#pmAmApproverName'),
+					approver_pos: String($('#pmAmApproverPos').attr('data-pos') || valText('#pmAmApproverPos') || ''),
+					approver_date: '',
+					approver_sig: String($('#pmAmApproverSig').prop('src') || $('#pmAmApproverSig').attr('src') || '')
+				};
+
+				try {
+					var form = document.createElement('form');
+					form.method = 'POST';
+					form.action = (String(location.pathname || '').indexOf('/Plan/') !== -1)
+						? '../User/approve_memo_pdf.php'
+						: 'approve_memo_pdf.php';
+					form.target = '_blank';
+					form.style.display = 'none';
+					Object.keys(payload).forEach(function(k){
+						var input = document.createElement('input');
+						input.type = 'hidden';
+						input.name = k;
+						input.value = payload[k] == null ? '' : String(payload[k]);
+						form.appendChild(input);
+					});
+					document.body.appendChild(form);
+					form.submit();
+					setTimeout(function(){
+						try { document.body.removeChild(form); } catch (eR) {}
+						$btn.data('busy', 0).prop('disabled', false).html(btnHtml);
+					}, 800);
+				} catch (eSub) {
+					$btn.data('busy', 0).prop('disabled', false).html(btnHtml);
+					alert('สร้าง PDF ไม่สำเร็จ');
+				}
+			});
 		});
 		$(document).on('input', '#pmAmDept, #pmAmDate', function(){
 			if (this.id === 'pmAmDept') {
@@ -32346,7 +32540,7 @@ if ($include_request_id > 0) {
 				$yearsEsc2 = mysqli_real_escape_string($db_Project, (string)$years_select);
 				$qAdd = @mysqli_query($db_Project, "
 					SELECT p.*,
-						   IFNULL((SELECT SUM(pa.total) FROM project_activity_budget pa WHERE pa.code_pre_project = p.id AND pa.status != '99'), 0) AS budget_total
+						   " . pm_sql_sum_active_activity_budget('p.id') . " AS budget_total
 					FROM pre_project p
 					WHERE p.status='1'
 					  AND p.year_project='".$yearsEsc2."'

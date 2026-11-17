@@ -1050,7 +1050,7 @@ if ($pm_appr_route_op === 'get_operate_project_detail') {
 			$unit_name = trim((string)$rU['name']);
 		}
 	}
-	$qBg = @mysqli_query($db_Project, "SELECT IFNULL(SUM(pa.total),0) AS t FROM project_activity_budget pa WHERE pa.code_pre_project='" . $project_id . "' AND pa.status!='99'");
+	$qBg = @mysqli_query($db_Project, "SELECT " . pm_sql_sum_active_activity_budget((string)(int)$project_id) . " AS t");
 	$rBg = $qBg ? mysqli_fetch_assoc($qBg) : null;
 	$budget_baht = (float)($rBg['t'] ?? 0);
 	$budget_source = function_exists('resolveProjectBudgetSourceForDisplay')
@@ -1695,7 +1695,7 @@ if ($pm_appr_route_op === 'get_report_project_detail') {
 			$unit_name = trim((string)$rU['name']);
 		}
 	}
-	$qBg = @mysqli_query($db_Project, "SELECT IFNULL(SUM(pa.total),0) AS t FROM project_activity_budget pa WHERE pa.code_pre_project='" . $project_id . "' AND pa.status!='99'");
+	$qBg = @mysqli_query($db_Project, "SELECT " . pm_sql_sum_active_activity_budget((string)(int)$project_id) . " AS t");
 	$rBg = $qBg ? mysqli_fetch_assoc($qBg) : null;
 	$budget_baht = (float)($rBg['t'] ?? 0);
 	$budget_source = function_exists('resolveProjectBudgetSourceForDisplay')
@@ -4666,7 +4666,7 @@ if ((int)$sid > 0) {
 		);
 		$rOpRid = $qOpRid ? mysqli_fetch_assoc($qOpRid) : null;
 		$__rid = (int)($rOpRid['rid'] ?? 0);
-		$__sumQ = @mysqli_query($db_Project, "SELECT IFNULL(SUM(pa.total),0) AS t FROM project_activity_budget pa WHERE pa.code_pre_project='" . $__pid . "' AND pa.status!='99'");
+		$__sumQ = @mysqli_query($db_Project, "SELECT " . pm_sql_sum_active_activity_budget((string)(int)$__pid) . " AS t");
 		$__sumR = $__sumQ ? mysqli_fetch_assoc($__sumQ) : null;
 		$__budget = (float)($__sumR['t'] ?? 0);
 		$__uc = (string)($__pr['code_unit'] ?? '');
@@ -4928,7 +4928,7 @@ if ((int)$sid > 0 && function_exists('ensureProjectResultReportSchema')) {
 		if (!$__isReviewer && !$__isReportSubmitter && !$__isPlanReportReviewer) {
 			continue;
 		}
-		$__sumQ = @mysqli_query($db_Project, "SELECT IFNULL(SUM(pa.total),0) AS t FROM project_activity_budget pa WHERE pa.code_pre_project='" . $__pid . "' AND pa.status!='99'");
+		$__sumQ = @mysqli_query($db_Project, "SELECT " . pm_sql_sum_active_activity_budget((string)(int)$__pid) . " AS t");
 		$__sumR = $__sumQ ? mysqli_fetch_assoc($__sumQ) : null;
 		$__budget = (float)($__sumR['t'] ?? 0);
 		$__uc = (string)($__pr['code_unit'] ?? '');
