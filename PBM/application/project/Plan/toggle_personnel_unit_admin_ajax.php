@@ -152,51 +152,7 @@ try {
 	}
 
 	try {
-		if ($next === 1) {
-			$isGroup2 = false;
-			$scopeDep = $pDep;
-			$scopeJob = $pJob;
-
-			if ($codeUnit > 0) {
-				$qu = mysqli_query(
-					$db_Project,
-					"SELECT id, status, job_code, code_job, code_department
-					 FROM set_unit WHERE id = " . (int) $codeUnit . " LIMIT 1"
-				);
-				$unit = ($qu && mysqli_num_rows($qu) > 0) ? mysqli_fetch_assoc($qu) : null;
-				if ($unit && (string) ($unit['status'] ?? '') !== '99') {
-					$jobCodeText = trim((string) ($unit['job_code'] ?? ''));
-					$codeJobNum = (int) ($unit['code_job'] ?? 0);
-					if ($jobCodeText === '' && $codeJobNum <= 0) {
-						$isGroup2 = true;
-					} else {
-						$scopeDep = (int) ($unit['code_department'] ?? 0);
-						$scopeJob = (int) ($unit['code_job'] ?? 0);
-					}
-				}
-			}
-
-			if ($isGroup2 && $codeUnit > 0) {
-				// กลุ่มที่ 2: ได้เพียง 1 คนต่อหน่วยงาน (code_unit เดียวกัน)
-				if (!$run(
-					"UPDATE set_project_personnel SET is_unit_admin = 0
-					 WHERE status != '99' AND id != $idEsc AND code_unit = " . (int) $codeUnit
-				)) {
-					throw new RuntimeException('clear_unit_admin');
-				}
-			} elseif (!$isGroup2 && ($scopeDep > 0 || $scopeJob > 0)) {
-				// กลุ่มที่ 1: ได้เพียง 1 คนต่อคู่สังกัด (code_department) + งาน (code_job)
-				if (!$run(
-					"UPDATE set_project_personnel SET is_unit_admin = 0
-					 WHERE status != '99' AND id != $idEsc
-					 AND IFNULL(code_department,0) = " . (int) $scopeDep . "
-					 AND IFNULL(code_job,0) = " . (int) $scopeJob
-				)) {
-					throw new RuntimeException('clear_dep_job_admin');
-				}
-			}
-		}
-
+		// อนุญาต Admin ได้หลายคนต่อหน่วยงาน (ไม่เคลียร์คนอื่นตอนตั้งสิทธิ์)
 		$ok = $run(
 			"UPDATE set_project_personnel SET is_unit_admin = $next WHERE id = $idEsc AND status != '99' LIMIT 1"
 		);

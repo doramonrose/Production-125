@@ -127,9 +127,28 @@ $pdfBudgetSrcCell = static function ($s) use ($h, $td18) {
 	$s = preg_replace('/[\x{200B}-\x{200D}\x{FEFF}\x{25A0}-\x{25A3}\x{25A8}\x{25AB}\x{25FB}-\x{25FE}\x{2610}-\x{2612}\x{2B1A}\x{2B1C}\x{FFED}]/u', '', $s);
 	$s = str_replace(['☐', '□', '▢', '■', '▪', '▫', '☑', '☒'], '', $s);
 	$s = preg_replace('/[ \t]+/u', ' ', (string)$s);
-	$s = preg_replace('#\s*/\s*#u', ' / ', (string)$s);
+	if (function_exists('pm_normalize_budget_source_display_text')) {
+		$s = pm_normalize_budget_source_display_text($s);
+	} elseif (strpos($s, "\n") === false && strpos($s, ' / ') !== false) {
+		$bits = preg_split('/\s*\/\s*/u', $s) ?: [];
+		$lines = [];
+		foreach ($bits as $bit) {
+			$bit = trim((string)$bit);
+			if ($bit === '') {
+				continue;
+			}
+			if (strpos($bit, '- ') !== 0) {
+				$bit = '- ' . $bit;
+			}
+			$lines[] = $bit;
+		}
+		if (count($lines) > 1) {
+			$s = implode("\n", $lines);
+		}
+	}
 	$s = trim((string)$s);
-	return $td18($h($s !== '' ? $s : '-'));
+	$html = nl2br($h($s !== '' ? $s : '-'), false);
+	return $td18($html);
 };
 
 $post = static function ($key, $default = '') use ($isApiMode) {
@@ -275,6 +294,16 @@ if (preg_match('/โทร\.?\s*44344\b/u', (string)$dept)) {
 }
 $proposer_pos = 'หัวหน้าโครงการ';
 // เลขที่ต้องมาจาก API ส่วนกลาง (รูปแบบ MHESI…/ลำดับ) — ห้ามประกอบ อว/ผxxx เอง
+if ($doc_no === '' && function_exists('pm_get_or_issue_approve_memo_doc_no') && $project_id > 0) {
+	$doc_no = trim((string)pm_get_or_issue_approve_memo_doc_no(
+		$db_Project,
+		$project_id,
+		is_array($pre) ? $pre : null,
+		trim((string)($_SESSION['code'] ?? $_SESSION['r_email'] ?? '')),
+		'',
+		''
+	));
+}
 if ($doc_no === '') {
 	$doc_no = '....................';
 }
@@ -456,8 +485,14 @@ $subjectLine = ($memo_type === 'change')
 	: ('ขออนุมัติดำเนินการโครงการ ' . $h($name !== '' ? $name : '…'));
 
 if ($memo_type === 'change') {
+	$budgetSrcNorm = function_exists('pm_normalize_budget_source_display_text')
+		? pm_normalize_budget_source_display_text((string)($budget_src !== '' ? $budget_src : '-'))
+		: trim((string)($budget_src !== '' ? $budget_src : '-'));
+	$budgetSrcPara = (strpos($budgetSrcNorm, "\n") !== false)
+		? ('<br>' . nl2br($h($budgetSrcNorm), false) . '<br>')
+		: (' ' . $h($budgetSrcNorm) . ' ');
 	$bodyHtml = '
-<div class="para">ด้วย ' . $h($unitShow) . ' ได้รับอนุมัติให้ดำเนินการโครงการ ' . $h($name !== '' ? $name : '…') . ' ประจำปีงบประมาณ พ.ศ. ' . $h($year !== '' ? $year : '…') . ' รหัสโครงการ ' . $h($code !== '' ? $code : '-') . ' แหล่งงบประมาณ ' . $h($budget_src !== '' ? $budget_src : '-') . ' วงเงินงบประมาณ ' . $h($budget !== '' ? $budget : '0') . ' บาท</div>
+<div class="para">ด้วย ' . $h($unitShow) . ' ได้รับอนุมัติให้ดำเนินการโครงการ ' . $h($name !== '' ? $name : '…') . ' ประจำปีงบประมาณ พ.ศ. ' . $h($year !== '' ? $year : '…') . ' รหัสโครงการ ' . $h($code !== '' ? $code : '-') . ' แหล่งงบประมาณ' . $budgetSrcPara . 'วงเงินงบประมาณ ' . $h($budget !== '' ? $budget : '0') . ' บาท</div>
 <div class="para">ในการนี้ ' . $h($unitShow) . ' มีความประสงค์ขอเปลี่ยนแปลงรายละเอียดของโครงการ เนื่องจาก ' . nl2br($h($reason !== '' ? $reason : '…')) . '</div>
 ';
 	$tableHtml = '

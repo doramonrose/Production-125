@@ -232,6 +232,19 @@ $typeName = is_array($typeRow) ? trim((string)($typeRow['name'] ?? '')) : '';
 $budgetSrc = function_exists('resolveProjectBudgetSourceForDisplay')
 	? resolveProjectBudgetSourceForDisplay($db_Project, $project_id)
 	: trim((string)($pre['budget_other'] ?? ''));
+$budgetSrcHtml = static function ($s) use ($h): string {
+	$t = trim((string)$s);
+	if ($t === '' || $t === '-') {
+		return '-';
+	}
+	if (function_exists('pm_budget_source_label_html')) {
+		return pm_budget_source_label_html($t);
+	}
+	if (function_exists('pm_normalize_budget_source_display_text')) {
+		$t = pm_normalize_budget_source_display_text($t);
+	}
+	return nl2br($h($t), false);
+};
 $startTxt = $monthTh($pre['start_month'] ?? '', $pre['start_year'] ?? '');
 $endTxt = $monthTh($pre['end_month'] ?? '', $pre['end_year'] ?? '');
 $periodTxt = ($startTxt !== '' || $endTxt !== '')
@@ -519,7 +532,7 @@ if ($wantPdf) {
 	$s4Html = empty($acts)
 		? '<div class="pad">-</div>'
 		: ('<table class="act" width="100%" cellpadding="4" cellspacing="0"><thead><tr><td width="28%" align="center"><b>กิจกรรม</b></td><td width="16%" align="center"><b>กลุ่มเป้าหมาย</b></td><td width="10%" align="center"><b>งบประมาณ (บาท)</b></td><td colspan="12" align="center"><b>แผนการดำเนินการ</b></td></tr><tr><td></td><td></td><td></td>' . $moHead . '</tr></thead><tbody>' . $actRows . '</tbody></table>'
-			. '<div class="foot">แหล่งงบประมาณ : ' . $orEmpty($budgetSrc !== '-' ? $budgetSrc : '') . '</div>'
+			. '<div class="foot" style="white-space:pre-line;line-height:1.45;">แหล่งงบประมาณ : ' . $budgetSrcHtml($budgetSrc) . '</div>'
 			. '<div class="total">รวมงบประมาณค่าใช้จ่าย : ' . $h($money($grand)) . ' บาท</div>');
 
 	$pdfCss = '
@@ -1176,7 +1189,7 @@ if ($wantPdf) {
 					<?php endforeach ?>
 					</tbody>
 				</table>
-				<div class="foot-src"><span class="k">แหล่งงบประมาณ :</span> <?= $orEmpty($budgetSrc !== '-' ? $budgetSrc : '') ?></div>
+				<div class="foot-src" style="white-space:pre-line;line-height:1.45;"><span class="k">แหล่งงบประมาณ :</span> <?= $budgetSrcHtml($budgetSrc) ?></div>
 				<div class="total-box">รวมงบประมาณค่าใช้จ่าย : <?= $h($money($grand)) ?> บาท</div>
 			<?php endif ?>
 		</div>

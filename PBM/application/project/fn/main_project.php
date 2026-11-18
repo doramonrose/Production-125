@@ -701,6 +701,100 @@ if (!function_exists('pm_ensure_general_note_schema')) {
 	}
 }
 
+/**
+ * แหล่งงบที่หน่วยงานกรอกในส่วนที่ 1 (คนละส่วนกับแหล่งงบที่หน่วยแผนกำหนดใน project_budget)
+ */
+if (!function_exists('pm_ensure_request_budget_schema')) {
+	function pm_ensure_request_budget_schema($db_Project): void
+	{
+		if (!$db_Project) {
+			return;
+		}
+		static $done = false;
+		if ($done) {
+			return;
+		}
+		$done = true;
+		$chk = @mysqli_query($db_Project, "SHOW COLUMNS FROM pre_project LIKE 'request_budget_other'");
+		if (!$chk || mysqli_num_rows($chk) === 0) {
+			@mysqli_query($db_Project, "ALTER TABLE pre_project ADD COLUMN `request_budget_other` MEDIUMTEXT NULL");
+		}
+	}
+}
+
+if (!function_exists('pm_get_request_budget_other')) {
+	/** อ่านข้อความแหล่งงบที่ยื่นขอของหน่วยงาน (ส่วนที่ 1) — ไม่ใช้แหล่งงบที่แผนกำหนด */
+	function pm_get_request_budget_other($db_Project, int $projectId, ?array $pre = null): string
+	{
+		$projectId = (int)$projectId;
+		if ($projectId <= 0 || !($db_Project instanceof mysqli)) {
+			return '';
+		}
+		if (function_exists('pm_ensure_request_budget_schema')) {
+			pm_ensure_request_budget_schema($db_Project);
+		}
+		$fromPre = '';
+		if (is_array($pre) && array_key_exists('request_budget_other', $pre)) {
+			$fromPre = trim((string)$pre['request_budget_other']);
+		} else {
+			$q = @mysqli_query(
+				$db_Project,
+				"SELECT IFNULL(request_budget_other,'') AS request_budget_other
+				 FROM pre_project WHERE id='" . $projectId . "' LIMIT 1"
+			);
+			$r = $q ? mysqli_fetch_assoc($q) : null;
+			$fromPre = trim((string)($r['request_budget_other'] ?? ''));
+		}
+		if ($fromPre !== '') {
+			return $fromPre;
+		}
+		// ซ่อมข้อมูลเก่า: ดึงจากแถว code_budget=99 ที่หน่วยงานเคยกรอก (รวมที่ถูก soft-delete เมื่อแผนกำหนดแหล่งงบ)
+		$q99 = @mysqli_query(
+			$db_Project,
+			"SELECT IFNULL(budget_other,'') AS budget_other
+			 FROM project_budget
+			 WHERE project_id='" . $projectId . "'
+			   AND CAST(IFNULL(code_budget,'') AS CHAR)='99'
+			   AND TRIM(IFNULL(budget_other,''))<>''
+			 ORDER BY (CASE WHEN IFNULL(status,'')='99' THEN 1 ELSE 0 END) ASC, id ASC
+			 LIMIT 1"
+		);
+		$r99 = $q99 ? mysqli_fetch_assoc($q99) : null;
+		$legacy = trim((string)($r99['budget_other'] ?? ''));
+		if ($legacy === '') {
+			return '';
+		}
+		$esc = mysqli_real_escape_string($db_Project, $legacy);
+		@mysqli_query(
+			$db_Project,
+			"UPDATE pre_project SET request_budget_other='" . $esc . "'
+			 WHERE id='" . $projectId . "'
+			   AND TRIM(IFNULL(request_budget_other,''))=''
+			 LIMIT 1"
+		);
+		return $legacy;
+	}
+}
+
+if (!function_exists('pm_set_request_budget_other')) {
+	function pm_set_request_budget_other($db_Project, int $projectId, string $text): bool
+	{
+		$projectId = (int)$projectId;
+		if ($projectId <= 0 || !($db_Project instanceof mysqli)) {
+			return false;
+		}
+		if (function_exists('pm_ensure_request_budget_schema')) {
+			pm_ensure_request_budget_schema($db_Project);
+		}
+		$esc = mysqli_real_escape_string($db_Project, trim($text));
+		return (bool)@mysqli_query(
+			$db_Project,
+			"UPDATE pre_project SET request_budget_other='" . $esc . "', dates=NOW()
+			 WHERE id='" . $projectId . "' LIMIT 1"
+		);
+	}
+}
+
 if (!function_exists('pm_parse_admin_tags')) {
 	function pm_parse_admin_tags($raw): array
 	{
@@ -1649,7 +1743,9 @@ if (!function_exists('pm_build_approve_memo_payload_from_db')) {
 				'name' => $name,
 				'year' => $year,
 				'budget' => $budget,
-				'budget_src' => $budgetSrc !== '' ? $budgetSrc : '-',
+				'budget_src' => function_exists('pm_normalize_budget_source_display_text')
+					? pm_normalize_budget_source_display_text($budgetSrc !== '' ? $budgetSrc : '-')
+					: ($budgetSrc !== '' ? $budgetSrc : '-'),
 				'proposer_name' => $proposerName,
 				'proposer_pos' => $proposerPos,
 				'proposer_date' => '',
@@ -4296,18 +4392,36 @@ function planSyncSetDepartmentAdminForPersonnelToggle($db_Project, $db_person, i
         : 'NULL';
 
     if ($next === 1) {
-        if (!mysqli_query(
+        // เก็บ Admin ได้หลายคนต่อหน่วยงาน — ไม่ลบคนอื่นในขอบเขตเดียวกัน
+        $exists = false;
+        $qExist = @mysqli_query(
             $db_Project,
-            "DELETE FROM set_department_admin WHERE dep_code = '$d' AND job_code = '$j' AND admin_group = $grp"
-        )) {
-            throw new RuntimeException('set_department_admin_delete_scope');
+            "SELECT id FROM set_department_admin
+			 WHERE dep_code = '$d' AND job_code = '$j' AND admin_group = $grp
+			   AND staff_admin = '$staffAdminEsc'
+			 LIMIT 1"
+        );
+        if ($qExist && mysqli_num_rows($qExist) > 0) {
+            $exists = true;
+            if ($unitPk > 0) {
+                @mysqli_query(
+                    $db_Project,
+                    "UPDATE set_department_admin
+					 SET unit_code = $unitCodeEsc, dep_name = '$n', dates = NOW()
+					 WHERE dep_code = '$d' AND job_code = '$j' AND admin_group = $grp
+					   AND staff_admin = '$staffAdminEsc'
+					 LIMIT 1"
+                );
+            }
         }
-        if (!mysqli_query(
-            $db_Project,
-            "INSERT INTO set_department_admin (dep_code, job_code, unit_code, dep_name, admin_group, staff_admin, dates)
-			 VALUES ('$d', '$j', $unitCodeEsc, '$n', $grp, '$staffAdminEsc', NOW())"
-        )) {
-            throw new RuntimeException('set_department_admin_insert');
+        if (!$exists) {
+            if (!mysqli_query(
+                $db_Project,
+                "INSERT INTO set_department_admin (dep_code, job_code, unit_code, dep_name, admin_group, staff_admin, dates)
+				 VALUES ('$d', '$j', $unitCodeEsc, '$n', $grp, '$staffAdminEsc', NOW())"
+            )) {
+                throw new RuntimeException('set_department_admin_insert');
+            }
         }
     } elseif (!mysqli_query(
         $db_Project,
@@ -5629,12 +5743,29 @@ if (!function_exists('pm_project_budget_amount_caps')) {
 	}
 }
 
+if (!function_exists('pm_fmt_budget_source_money')) {
+	/** จัดรูปแบบจำนวนเงินแหล่งงบ: ไม่โชว์ทศนิยมเมื่อเป็น .00 */
+	function pm_fmt_budget_source_money($n): string
+	{
+		$f = round((float)$n, 2);
+		if (!is_finite($f)) {
+			return '0';
+		}
+		if (abs($f - round($f)) < 0.0000001) {
+			return number_format((float)round($f), 0, '.', ',');
+		}
+		return number_format($f, 2, '.', ',');
+	}
+}
+
 if (!function_exists('pm_budget_source_sum_error')) {
 	function pm_budget_source_sum_error(float $sum, array $caps): string
 	{
 		$sumC = (int)round($sum * 100);
 		$fmt = static function ($n) {
-			return number_format((float)$n, 2, '.', ',');
+			return function_exists('pm_fmt_budget_source_money')
+				? pm_fmt_budget_source_money($n)
+				: number_format((float)$n, 2, '.', ',');
 		};
 		if (array_key_exists('approved', $caps) && $caps['approved'] !== null) {
 			$capC = (int)round(((float)$caps['approved']) * 100);
@@ -5651,7 +5782,11 @@ if (!function_exists('pm_budget_source_sum_error')) {
 }
 
 if (!function_exists('pm_joined_budget_source_label')) {
-	/** คืนข้อความหลายแหล่งเมื่อมีมากกว่า 1 แหล่ง หรือมีการระบุจำนวนเงิน ไม่เช่นนั้นคืน null เพื่อใช้ข้อความเดิม */
+	/**
+	 * คืนข้อความหลายแหล่งเมื่อมีมากกว่า 1 แหล่ง หรือมีการระบุจำนวนเงิน
+	 * รูปแบบหลายแหล่ง: แต่ละแหล่งขึ้นบรรทัดใหม่นำด้วย "- "
+	 * ไม่เช่นนั้นคืน null เพื่อใช้ข้อความเดิม
+	 */
 	function pm_joined_budget_source_label($db_Project, int $projectId): ?string
 	{
 		$rows = function_exists('pm_project_budget_source_rows')
@@ -5672,14 +5807,86 @@ if (!function_exists('pm_joined_budget_source_label')) {
 		}
 		$parts = [];
 		foreach ($rows as $row) {
-			$bit = (string)$row['label'];
+			$bit = trim((string)$row['label']);
 			if ($row['amount'] !== null) {
-				$bit .= ' ' . number_format((float)$row['amount'], 2, '.', ',') . ' บาท';
+				$amtTxt = function_exists('pm_fmt_budget_source_money')
+					? pm_fmt_budget_source_money($row['amount'])
+					: number_format((float)$row['amount'], 2, '.', ',');
+				$bit .= ' ' . $amtTxt . ' บาท';
+			}
+			if ($bit === '') {
+				continue;
 			}
 			$parts[] = $bit;
 		}
-		$joined = trim(implode(' / ', $parts));
+		if (count($parts) === 0) {
+			return null;
+		}
+		if (count($parts) === 1) {
+			return $parts[0];
+		}
+		$lines = [];
+		foreach ($parts as $bit) {
+			$lines[] = '- ' . ltrim($bit, "- \t");
+		}
+		$joined = trim(implode("\n", $lines));
 		return $joined !== '' ? $joined : null;
+	}
+}
+
+if (!function_exists('pm_normalize_budget_source_display_text')) {
+	/**
+	 * ทำให้ข้อความแหล่งงบหลายแหล่งเป็นบรรทัดละแหล่งนำด้วย "- "
+	 * รองรับทั้งขึ้นบรรทัดใหม่แล้ว และตัวคั่น " / " แบบเดิม
+	 */
+	function pm_normalize_budget_source_display_text(string $label): string
+	{
+		$label = trim(str_replace(["\r\n", "\r"], "\n", $label));
+		if ($label === '') {
+			return '-';
+		}
+		// ตัดทศนิยม .00 ของจำนวนเงินแหล่งงบ เช่น 69,840.00 บาท → 69,840 บาท
+		$label = preg_replace('/\.00(?=\s*บาท)/u', '', $label) ?? $label;
+		$lines = [];
+		if (strpos($label, "\n") !== false) {
+			foreach (explode("\n", $label) as $bit) {
+				$bit = trim((string)$bit);
+				if ($bit !== '') {
+					$lines[] = $bit;
+				}
+			}
+		} elseif (strpos($label, ' / ') !== false) {
+			foreach ((preg_split('/\s*\/\s*/u', $label) ?: []) as $bit) {
+				$bit = trim((string)$bit);
+				if ($bit !== '') {
+					$lines[] = $bit;
+				}
+			}
+		} else {
+			return $label;
+		}
+		if (count($lines) <= 1) {
+			return $lines[0] ?? $label;
+		}
+		$out = [];
+		foreach ($lines as $bit) {
+			$out[] = '- ' . ltrim($bit, "- \t");
+		}
+		return implode("\n", $out);
+	}
+}
+
+if (!function_exists('pm_budget_source_label_html')) {
+	/** แปลงข้อความแหล่งงบ (รองรับขึ้นบรรทัดใหม่ / คั่นด้วย " / ") เป็น HTML ปลอดภัย */
+	function pm_budget_source_label_html(string $label): string
+	{
+		$label = function_exists('pm_normalize_budget_source_display_text')
+			? pm_normalize_budget_source_display_text($label)
+			: trim($label);
+		if ($label === '') {
+			return '-';
+		}
+		return nl2br(htmlspecialchars($label, ENT_QUOTES, 'UTF-8'), false);
 	}
 }
 
@@ -5699,7 +5906,10 @@ function resolveProjectBudgetSourceForDisplay($db_Project, $project_id)
 		return $memo[$project_id];
 	}
 	try {
-		$memo[$project_id] = resolveProjectBudgetSourceForDisplay_core($db_Project, $project_id);
+		$raw = resolveProjectBudgetSourceForDisplay_core($db_Project, $project_id);
+		$memo[$project_id] = function_exists('pm_normalize_budget_source_display_text')
+			? pm_normalize_budget_source_display_text((string)$raw)
+			: (string)$raw;
 	} catch (Throwable $e) {
 		$memo[$project_id] = '-';
 	}

@@ -2185,7 +2185,7 @@ if ($pm_appr_route_op === 'get_cancel_request_detail' || $pm_appr_route_op === '
 			'project_id' => $project_id,
 			'project_name' => (string)($req['project_name'] ?? ''),
 			'project_code' => (string)($req['project_code'] ?? ''),
-			'budget_source' => (string)($req['budget_source'] ?? '-'),
+			'budget_source' => (function_exists('pm_normalize_budget_source_display_text') ? pm_normalize_budget_source_display_text((string)($req['budget_source'] ?? '-')) : (string)($req['budget_source'] ?? '-')),
 			'budget_amount' => (float)($req['budget_amount'] ?? 0),
 			'reason' => (string)($req['reason'] ?? ''),
 			'req_status' => $reqStatus,
@@ -2459,7 +2459,7 @@ if ($pm_appr_route_op === 'get_change_request_detail') {
 			'project_code' => (string)($req['project_code'] ?? ''),
 			'project_name' => (string)($req['project_name'] ?? ''),
 			'budget_baht' => (float)($req['budget_amount'] ?? 0),
-			'budget_source' => (string)($req['budget_source'] ?? '-'),
+			'budget_source' => (function_exists('pm_normalize_budget_source_display_text') ? pm_normalize_budget_source_display_text((string)($req['budget_source'] ?? '-')) : (string)($req['budget_source'] ?? '-')),
 			'reason' => (string)($req['reason'] ?? ''),
 			'details' => $details,
 			'files' => $files,
@@ -5148,7 +5148,7 @@ if ((int)$sid > 0) {
 			'name_project' => $__nm,
 			'unit_name' => $__unit_name,
 			'budget' => (float)($__cr['budget_amount'] ?? 0),
-			'budget_source' => (string)($__cr['budget_source'] ?? '-'),
+			'budget_source' => (function_exists('pm_normalize_budget_source_display_text') ? pm_normalize_budget_source_display_text((string)($__cr['budget_source'] ?? '-')) : (string)($__cr['budget_source'] ?? '-')),
 			'dates' => (string)($__cr['created_at'] ?? ''),
 			'staff_insert' => (int)($__cr['staff_insert'] ?? 0),
 			'subject' => $__subject,
@@ -5234,7 +5234,7 @@ if ((int)$sid > 0) {
 			'name_project' => $__nm,
 			'unit_name' => $__unit_name,
 			'budget' => (float)($__cr['budget_amount'] ?? 0),
-			'budget_source' => (string)($__cr['budget_source'] ?? '-'),
+			'budget_source' => (function_exists('pm_normalize_budget_source_display_text') ? pm_normalize_budget_source_display_text((string)($__cr['budget_source'] ?? '-')) : (string)($__cr['budget_source'] ?? '-')),
 			'dates' => (string)(($__cr['submitted_at'] ?? '') !== '' ? $__cr['submitted_at'] : ($__cr['created_at'] ?? '')),
 			'staff_insert' => (int)($__cr['staff_insert'] ?? 0),
 			'subject' => $__subject,
@@ -7847,7 +7847,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 								data-objective="<?php echo htmlspecialchars($__obj_key, ENT_QUOTES, 'UTF-8'); ?>"
 								data-request-id="<?php echo (int)($pr['request_id'] ?? 0); ?>"
 								data-budget="<?php echo htmlspecialchars((string)($pr['budget'] ?? '0'), ENT_QUOTES, 'UTF-8'); ?>"
-								data-budget-source="<?php echo htmlspecialchars((string)($pr['budget_source'] ?? '-'), ENT_QUOTES, 'UTF-8'); ?>">
+								data-budget-source="<?php echo htmlspecialchars(function_exists('pm_normalize_budget_source_display_text') ? pm_normalize_budget_source_display_text((string)($pr['budget_source'] ?? '-')) : (string)($pr['budget_source'] ?? '-'), ENT_QUOTES, 'UTF-8'); ?>">
 								<td class="text-center pm-col-no"><?php echo (int)$pm_appr_row_no; ?></td>
 								<td class="text-center">
 									<?php echo function_exists('pm_render_ab_badge')
@@ -8077,7 +8077,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 						<div class="k">รหัส</div>
 						<div class="v" id="pmPlanCanCode">-</div>
 						<div class="k">แหล่งงบประมาณ</div>
-						<div class="v" id="pmPlanCanBudgetSrc">-</div>
+						<div class="v" id="pmPlanCanBudgetSrc" style="white-space:pre-line;line-height:1.45;">-</div>
 						<div class="k">งบประมาณ</div>
 						<div class="v"><span id="pmPlanCanBudget">0</span> บาท</div>
 						<div class="k">ผู้ยื่นคำขอ</div>
@@ -8795,8 +8795,68 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 			var name = String(od.project_name || '-');
 			var budgetFmt = fmtSumBudgetBaht(od.budget_baht);
 			if (!budgetFmt) budgetFmt = '0.00';
-			var bsrc = String(od.budget_source || '-');
-			var bsrcCell = $('<div/>').text(bsrc).html();
+
+	window.pmBudgetSrcNormalize = window.pmBudgetSrcNormalize || function(text){
+		var t = String(text == null ? '' : text).replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+		if (!t) return '-';
+		t = t.replace(/\.00(?=\s*บาท)/g, '');
+		var lines = [];
+		if (t.indexOf('\n') >= 0) {
+			t.split('\n').forEach(function(s){ s = String(s || '').trim(); if (s) lines.push(s); });
+		} else if (/\s*\/\s*/.test(t) && t.split(/\s*\/\s*/).filter(function(s){ return String(s||'').trim() !== ''; }).length > 1) {
+			t.split(/\s*\/\s*/).forEach(function(s){ s = String(s || '').trim(); if (s) lines.push(s); });
+		} else {
+			return t;
+		}
+		if (lines.length <= 1) return lines[0] || t;
+		return lines.map(function(s){ return (String(s).indexOf('- ') === 0) ? s : ('- ' + String(s).replace(/^[- \t]+/, '')); }).join('\n');
+	};
+	window.pmBudgetSrcHtml = window.pmBudgetSrcHtml || function(text){
+		return $('<div/>').text(window.pmBudgetSrcNormalize(text)).html().replace(/\n/g, '<br>');
+	};
+	window.pmBudgetSrcSet = window.pmBudgetSrcSet || function(sel, text){
+		var $el = (sel && sel.jquery) ? sel : $(sel);
+		if (!$el.length) return;
+		$el.css('white-space', 'pre-line').css('line-height', '1.45').html(window.pmBudgetSrcHtml(text));
+	};
+
+			function pmFmtBudgetSrcLines(od){
+				var rows = Array.isArray(od && od.budget_sources) ? od.budget_sources : [];
+				var lines = [];
+				rows.forEach(function(r){
+					if (!r) return;
+					var bit = String(r.label || r.code || '').trim();
+					if (!bit) return;
+					if (r.amount !== null && r.amount !== undefined && r.amount !== '') {
+						var n = Number(r.amount);
+						if (!isNaN(n)) {
+							var amt = (Math.abs(n - Math.round(n)) < 0.0000001)
+								? Math.round(n).toLocaleString('en-US', { maximumFractionDigits: 0 })
+								: n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+							bit += ' ' + amt + ' บาท';
+						}
+					}
+					lines.push(bit);
+				});
+				if (lines.length >= 2) {
+					return lines.map(function(s){ return (String(s).indexOf('- ') === 0) ? s : ('- ' + s); }).join('\n');
+				}
+				if (lines.length === 1) return lines[0];
+				var bsrc = String((od && od.budget_source) || '-');
+				if (bsrc.indexOf('\n') < 0 && bsrc.indexOf(' / ') >= 0) {
+					return bsrc.split(/\s*\/\s*/).map(function(s){
+						s = String(s || '').trim();
+						if (!s) return '';
+						return (s.indexOf('- ') === 0) ? s : ('- ' + s);
+					}).filter(Boolean).join('\n');
+				}
+				return bsrc;
+			}
+			function pmBudgetSrcHtml(text){
+				return $('<div/>').text(String(text || '-')).html().replace(/\n/g, '<br>');
+			}
+			var bsrc = pmFmtBudgetSrcLines(od);
+			var bsrcCell = '<div style="white-space:pre-line;line-height:1.45;">' + pmBudgetSrcHtml(bsrc) + '</div>';
 			if (flowType === 'operate' && Number(od.can_edit_budget) === 1) {
 				window.pmApprBudgetEdit = {
 					projectId: parseInt(od.project_id || 0, 10) || 0,
@@ -8808,8 +8868,8 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 					caps: od.budget_caps || {approved: null, expense: od.budget_baht}
 				};
 				var srcShow = (bsrc && bsrc !== '-') ? bsrc : 'ยังไม่ได้เลือก';
-				bsrcCell = '<div class="d-flex flex-wrap align-items-center" style="gap:.4rem;">'
-					+ '<span id="mdBudgetSrcLabel">' + $('<div/>').text(srcShow).html() + '</span>'
+				bsrcCell = '<div style="display:flex;flex-direction:column;align-items:flex-start;gap:.45rem;">'
+					+ '<div id="mdBudgetSrcLabel" style="white-space:pre-line;line-height:1.45;">' + pmBudgetSrcHtml(srcShow) + '</div>'
 					+ '<button type="button" class="btn btn-sm btn-outline-primary font-weight-bold" id="mdBtnBudgetEdit"><i class="fa fa-edit mr-1"></i>แก้ไขแหล่งงบประมาณ</button>'
 					+ '</div>'
 					+ '<div id="mdBudgetEditBox" class="d-none mt-2" style="max-width:100%;">'
@@ -9376,7 +9436,10 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 	var mdBudgetChosen = [];
 	function mdBudgetMoney(n){
 		var x = parseFloat(n);
-		if (!isFinite(x)) return '0.00';
+		if (!isFinite(x)) return '0';
+		if (Math.abs(x - Math.round(x)) < 0.0000001) {
+			return Math.round(x).toLocaleString('en-US', {maximumFractionDigits:0});
+		}
 		return x.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
 	}
 	function mdBudgetSum(){
@@ -9507,7 +9570,8 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 			if (res && Number(res.ok) === 1) {
 				var label = String(res.label || '').trim();
 				if (!label) label = payloadSources[0].code;
-				$('#mdBudgetSrcLabel').text(label);
+				var $lbl = $('#mdBudgetSrcLabel');
+				$lbl.css('white-space', 'pre-line').html($('<div/>').text(label).html().replace(/\n/g, '<br>'));
 				$('#mdBudgetEditBox').addClass('d-none');
 				if (lastDetailResp && lastDetailResp.operate_detail) {
 					lastDetailResp.operate_detail.budget_source = label;
@@ -11617,7 +11681,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 				'<tr><td>รหัสโครงการ</td><td>' + $('<div/>').text(rowCode || '-').html() + '</td></tr>'
 				+ '<tr><td>ชื่อโครงการ</td><td>' + $('<div/>').text(rowName || '-').html() + '</td></tr>'
 				+ '<tr><td>งบประมาณ (บาท)</td><td>' + $('<div/>').text(rowBudgetFmt).html() + '</td></tr>'
-				+ '<tr><td>แหล่งงบประมาณ</td><td>' + $('<div/>').text(rowBudgetSrc || '-').html() + '</td></tr>'
+				+ '<tr><td>แหล่งงบประมาณ</td><td><div style="white-space:pre-line;line-height:1.45;">' + (window.pmBudgetSrcHtml ? pmBudgetSrcHtml(rowBudgetSrc || '-') : $('<div/>').text(rowBudgetSrc || '-').html()) + '</div></td></tr>'
 			);
 		};
 		$('#mdRequestId').val(String(pid));
@@ -11834,7 +11898,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 			if (detailHref2) $('#pmPlanCanDetailBtn').attr('href', detailHref2).show();
 			$('#pmPlanCanName, #pmPlanCanName2').text(req.project_name || '-');
 			$('#pmPlanCanCode').text(req.project_code || '-');
-			$('#pmPlanCanBudgetSrc').text(req.budget_source || '-');
+			pmBudgetSrcSet('#pmPlanCanBudgetSrc', req.budget_source || '-');
 			$('#pmPlanCanBudget').text(pmPlanCanFmtBaht(req.budget_amount));
 			$('#pmPlanCanSender').text(req.sender_name || '-');
 			$('#pmPlanCanReason').text(req.reason || '-');
@@ -11952,7 +12016,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 				'<tr><td>รหัสโครงการ</td><td>' + $('<div/>').text(rowCode || '-').html() + '</td></tr>'
 				+ '<tr><td>ชื่อโครงการ</td><td>' + $('<div/>').text(rowName || '-').html() + '</td></tr>'
 				+ '<tr><td>งบประมาณ (บาท)</td><td>' + $('<div/>').text(rowBudgetFmt).html() + '</td></tr>'
-				+ '<tr><td>แหล่งงบประมาณ</td><td>' + $('<div/>').text(rowBudgetSrc || '-').html() + '</td></tr>'
+				+ '<tr><td>แหล่งงบประมาณ</td><td><div style="white-space:pre-line;line-height:1.45;">' + (window.pmBudgetSrcHtml ? pmBudgetSrcHtml(rowBudgetSrc || '-') : $('<div/>').text(rowBudgetSrc || '-').html()) + '</div></td></tr>'
 			);
 		};
 		$('#mdRequestId').val(String(pid));

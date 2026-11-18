@@ -957,7 +957,7 @@ if ($op === '' && isset($_GET['cp'])) {
 								<div class="pm-budget-src-stats">
 									<span class="pm-budget-src-stat"><i class="fas fa-list"></i> <?= (int)$totalCount ?> รายการ</span>
 									<span class="pm-budget-src-stat"><i class="fas fa-calendar"></i> <?= count($year_options) ?> ปีงบประมาณ</span>
-									<span class="pm-budget-src-stat"><i class="fas fa-coins"></i> รวม <?= number_format($totalAll, 2) ?> บาท</span>
+									<span class="pm-budget-src-stat"><i class="fas fa-coins"></i> รวม <?= htmlspecialchars(function_exists('pm_fmt_budget_source_money') ? pm_fmt_budget_source_money($totalAll) : ((abs($totalAll - round($totalAll)) < 0.0000001) ? number_format(round($totalAll), 0) : number_format($totalAll, 2)), ENT_QUOTES, 'UTF-8') ?> บาท</span>
 								</div>
 							</div>
 						</div>
@@ -1001,7 +1001,7 @@ if ($op === '' && isset($_GET['cp'])) {
 												</div>
 												<div class="pm-budget-year-meta">
 													<span class="pm-budget-year-chip"><?= count($rows) ?> รายการ</span>
-													<span class="pm-budget-year-chip is-money">รวม <?= number_format($yearSum, 2) ?> บาท</span>
+													<span class="pm-budget-year-chip is-money">รวม <?= htmlspecialchars(function_exists('pm_fmt_budget_source_money') ? pm_fmt_budget_source_money($yearSum) : ((abs($yearSum - round($yearSum)) < 0.0000001) ? number_format(round($yearSum), 0) : number_format($yearSum, 2)), ENT_QUOTES, 'UTF-8') ?> บาท</span>
 												</div>
 											</div>
 										</td>
@@ -1030,7 +1030,7 @@ if ($op === '' && isset($_GET['cp'])) {
 											<?php endif; ?>
 										</td>
 										<td class="pm-budget-src-amount">
-											<?= number_format($amount, 2) ?>
+											<?= htmlspecialchars(function_exists('pm_fmt_budget_source_money') ? pm_fmt_budget_source_money($amount) : ((abs($amount - round($amount)) < 0.0000001) ? number_format(round($amount), 0) : number_format($amount, 2)), ENT_QUOTES, 'UTF-8') ?>
 											<small>บาท</small>
 										</td>
 									</tr>
@@ -4889,19 +4889,11 @@ if ($op === '' && isset($_GET['cp'])) {
 							window.Swal.fire({
 								icon: 'success',
 								title: okMsg,
-								timer: on ? 900 : 1200,
-								showConfirmButton: !on
-							}).then(function() {
-								// เปิดสิทธิ์แล้วมีการถอด Admin คนอื่นในขอบเขตเดียวกัน — รีโหลดให้ไอคอนทุกแถวตรงกับฐานข้อมูล
-								if (on) {
-									window.location.reload();
-								}
+								timer: 1000,
+								showConfirmButton: false
 							});
 						} else {
 							alert(okMsg);
-							if (on) {
-								window.location.reload();
-							}
 						}
 					})
 					.catch(function() {

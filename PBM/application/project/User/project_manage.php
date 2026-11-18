@@ -2927,6 +2927,15 @@ if (!function_exists('pm_render_budget_expense_report_table')) {
 								<td class="pm-ber-lines-cell text-left">
 									<div class="pm-ber-line-detail-row">
 										<span class="pm-ber-line-detail">• <?= htmlspecialchars($detailTxt, ENT_QUOTES, 'UTF-8') ?></span>
+										<?php if ($lineId > 0): ?>
+											<button type="button"
+												class="btn btn-sm btn-outline-primary pm-ber-disburse-doc-btn pm-ber-line-detail-btn"
+												data-line-id="<?= $lineId ?>"
+												data-doc-label="รายละเอียดการเบิกจ่าย"
+												title="ดูรายละเอียดการเบิกจ่าย">
+												<i class="fa fa-info-circle mr-1"></i> รายละเอียด
+											</button>
+										<?php endif ?>
 										<?php if ($lineId > 0 && $allow_edit && trim((string)($ln['doc_status'] ?? '')) !== 'confirmed'): ?>
 											<button type="button"
 												class="btn btn-sm btn-pm-edit-orange pm-budget-disburse-edit pm-ber-line-edit-btn"
@@ -4778,7 +4787,8 @@ if ($op === 'get_budget_disburse_external_ajax') {
 	}
 	$qLine = @mysqli_query(
 		$db_Project,
-		"SELECT l.*, r.project_id, r.project_activity_id, r.activity_detail AS report_activity_detail
+		"SELECT l.*, r.project_id, r.project_activity_id, r.activity_detail AS report_activity_detail,
+		        r.staff_insert AS report_staff_insert, r.created_at AS report_created_at
 		 FROM project_budget_disburse_line l
 		 INNER JOIN project_budget_disburse_report r ON r.id = l.report_id
 		 WHERE l.id='" . (int)$line_id . "' AND l.status='1' AND r.status='1' AND r.project_id='" . (int)$project_id . "'
@@ -4789,9 +4799,14 @@ if ($op === 'get_budget_disburse_external_ajax') {
 		echo json_encode(['ok' => 0, 'msg' => 'ไม่พบรายการเบิกจ่าย'], JSON_UNESCAPED_UNICODE);
 		exit;
 	}
-	if (trim((string)($lineRow['doc_status'] ?? '')) !== 'confirmed') {
-		echo json_encode(['ok' => 0, 'msg' => 'รายการนี้ยังไม่ได้ยืนยันการเบิกจ่าย'], JSON_UNESCAPED_UNICODE);
-		exit;
+	$isConfirmed = trim((string)($lineRow['doc_status'] ?? '')) === 'confirmed';
+	$requesterStaffId = (int)($lineRow['report_staff_insert'] ?? 0);
+	$requesterName = '';
+	if ($requesterStaffId > 0 && function_exists('pm_get_staff_display_name_by_id') && isset($db_person)) {
+		$requesterName = trim((string)pm_get_staff_display_name_by_id($db_person, $requesterStaffId));
+		if ($requesterName === '-' || $requesterName === '') {
+			$requesterName = '';
+		}
 	}
 	$pre = function_exists('getPreProjectID') ? getPreProjectID($db_Project, $project_id) : null;
 	$projectCode = is_array($pre) ? trim((string)($pre['code_pre_project'] ?? '')) : '';
@@ -4842,6 +4857,10 @@ if ($op === 'get_budget_disburse_external_ajax') {
 		'disburse_month' => $disburseMonth,
 		'disburse_month_label' => $monthLabels[$disburseMonth] ?? $disburseMonth,
 		'confirmed_at' => (string)($lineRow['confirmed_at'] ?? ''),
+		'report_created_at' => (string)($lineRow['report_created_at'] ?? ''),
+		'requester_staff_id' => $requesterStaffId,
+		'requester_name' => $requesterName,
+		'doc_status' => (string)($lineRow['doc_status'] ?? ''),
 		'doc_label' => (string)($lineRow['doc_label'] ?? ''),
 		'doc_url' => (string)($lineRow['doc_url'] ?? ''),
 	];
@@ -4887,7 +4906,7 @@ if ($op === 'get_budget_disburse_external_ajax') {
 	$withdraw = null;
 	$apiMeta = [];
 	$withdrawFetchOk = false;
-	if (function_exists('pm_pbm_fetch_external_withdraws')) {
+	if ($isConfirmed && function_exists('pm_pbm_fetch_external_withdraws')) {
 		$apiRes = pm_pbm_fetch_external_withdraws($projectCode);
 		$withdrawFetchOk = !empty($apiRes['ok']);
 		$apiMeta = is_array($apiRes['meta'] ?? null) ? $apiRes['meta'] : [];
@@ -4965,24 +4984,39 @@ if ($op === 'get_budget_disburse_external_ajax') {
 	}
 	$openUrl = $withdrawSystemUrl !== '' ? $withdrawSystemUrl : $resumeUrl;
 
-	// ถ้ายังไม่มีรายการในระบบเบิกจ่าย ให้สร้างมุมมองจากชุดที่ยืนยันในโครงการ
+	// ถ้ายังไม่มีรายการในระบบเบิกจ่าย ให้สร้างมุมมองจากข้อมูลในโครงการ
 	if (!is_array($withdraw)) {
-		$localStatus = $reconcile === 'pending_handoff'
-			? 'รอบันทึกในระบบเบิกจ่าย'
-			: 'ยืนยันแล้ว';
+		if (!$isConfirmed) {
+			$localStatus = 'ยังไม่ได้ยืนยันการเบิกจ่าย';
+			$localRaw = 'draft_local';
+			$localSubject = 'รายการเบิกจ่าย (ยังไม่ยืนยัน)' . ($activityName !== '' ? ' — ' . $activityName : '');
+		} elseif ($reconcile === 'pending_handoff') {
+			$localStatus = 'รอบันทึกในระบบเบิกจ่าย';
+			$localRaw = 'pending_handoff';
+			$localSubject = 'รายการเบิกจ่ายที่ยืนยันแล้ว' . ($activityName !== '' ? ' — ' . $activityName : '');
+		} else {
+			$localStatus = 'ยืนยันแล้ว';
+			$localRaw = 'confirmed_local';
+			$localSubject = 'รายการเบิกจ่ายที่ยืนยันแล้ว' . ($activityName !== '' ? ' — ' . $activityName : '');
+		}
+		$localDate = trim((string)($lineRow['confirmed_at'] ?? ''));
+		if ($localDate === '') {
+			$localDate = trim((string)($lineRow['report_created_at'] ?? ''));
+		}
 		$withdraw = [
 			'id' => 0,
-			'subject' => 'รายการเบิกจ่ายที่ยืนยันแล้ว' . ($activityName !== '' ? ' — ' . $activityName : ''),
+			'subject' => $localSubject,
 			'project_code' => $projectCode,
 			'project_name' => $projectName,
 			'project_activity_name' => $activityName,
 			'project_activity_detail' => $activityDetail,
 			'amount' => $batchAmount > 0 ? $batchAmount : $lineAmount,
-			'date' => (string)($lineRow['confirmed_at'] ?? ''),
-			'raw_status' => $reconcile === 'pending_handoff' ? 'pending_handoff' : 'confirmed_local',
+			'date' => $localDate,
+			'raw_status' => $localRaw,
 			'status' => $localStatus,
+			'applicant_name' => $requesterName,
 			'items' => $batchItems !== [] ? $batchItems : [[
-				'name' => $lineDetail !== '' ? $lineDetail : 'รายการเบิกจ่าย',
+				'name' => $lineDetail !== '' ? $lineDetail : ($itemName !== '' ? $itemName : 'รายการเบิกจ่าย'),
 				'category' => $itemName,
 				'amount' => $lineAmount,
 			]],
@@ -4990,12 +5024,17 @@ if ($op === 'get_budget_disburse_external_ajax') {
 			'pdfs' => [],
 			'from_local' => 1,
 		];
-	} elseif (empty($withdraw['items']) || !is_array($withdraw['items']) || count($withdraw['items']) < count($batchItems)) {
-		// มี withdraw แต่ items ไม่ครบ — เติมจากชุดที่ยืนยันในโครงการ
-		if (count($batchItems) > 1) {
-			$withdraw['items'] = $batchItems;
-			if (round((float)($withdraw['amount'] ?? 0), 2) <= 0) {
-				$withdraw['amount'] = $batchAmount;
+	} else {
+		if (trim((string)($withdraw['applicant_name'] ?? '')) === '' && $requesterName !== '') {
+			$withdraw['applicant_name'] = $requesterName;
+		}
+		if (empty($withdraw['items']) || !is_array($withdraw['items']) || count($withdraw['items']) < count($batchItems)) {
+			// มี withdraw แต่ items ไม่ครบ — เติมจากชุดที่ยืนยันในโครงการ
+			if (count($batchItems) > 1) {
+				$withdraw['items'] = $batchItems;
+				if (round((float)($withdraw['amount'] ?? 0), 2) <= 0) {
+					$withdraw['amount'] = $batchAmount;
+				}
 			}
 		}
 	}
@@ -7341,6 +7380,8 @@ if ($op === 'save_general_info_ajax') {
 		$code_type = trim((string)($_POST['code_type'] ?? ''));
 		$code_budget = trim((string)($_POST['code_budget'] ?? '99'));
 		$budget_other = trim((string)($_POST['budget_other'] ?? ''));
+		// ส่วนที่ 1: แหล่งงบที่ยื่นขอของหน่วยงาน (คนละส่วนกับแหล่งงบที่แผนกำหนด)
+		$request_budget_other = trim((string)($_POST['request_budget_other'] ?? $budget_other));
 		$start_month = trim((string)($_POST['start_month'] ?? ''));
 		$start_year = trim((string)($_POST['start_year'] ?? ''));
 		$end_month = trim((string)($_POST['end_month'] ?? ''));
@@ -7351,6 +7392,9 @@ if ($op === 'save_general_info_ajax') {
 		$general_note = trim((string)($_POST['general_note'] ?? ''));
 		if (function_exists('pm_ensure_general_note_schema')) {
 			pm_ensure_general_note_schema($db_Project);
+		}
+		if (function_exists('pm_ensure_request_budget_schema')) {
+			pm_ensure_request_budget_schema($db_Project);
 		}
 
 		// fallback: บางครั้ง datepicker อาจไม่อัปเดต hidden fields แต่มี text (mm/yyyy) อยู่
@@ -7468,14 +7512,10 @@ if ($op === 'save_general_info_ajax') {
 			}
 		}
 
-		// project_budget: keep one active row
-		if (!pm_plan_restricts_like_user($status_now, $notify_result_now)) {
-			@mysqli_query($db_Project, "UPDATE project_budget SET status='99', dates=NOW(), staff_insert='".(int)$sid."' WHERE project_id='".(int)$project_id."' AND status!='99'");
-			if ($budget_other !== '') {
-				$stb = mysqli_prepare($db_Project, "INSERT INTO project_budget (project_id, code_budget, budget_other, status, dates, staff_insert) VALUES (?, ?, ?, '1', NOW(), ?)");
-				if (!$stb) throw new Exception(mysqli_error($db_Project) ?: 'เตรียมบันทึกแหล่งงบไม่สำเร็จ');
-				mysqli_stmt_bind_param($stb, 'issi', $project_id, $code_budget, $budget_other, $sid);
-				if (!mysqli_stmt_execute($stb)) throw new Exception(mysqli_stmt_error($stb) ?: 'บันทึกแหล่งงบไม่สำเร็จ');
+		// ส่วนที่ 1 แหล่งงบที่ยื่นขอ — เก็บแยก ไม่ไปทับ project_budget ที่หน่วยแผนกำหนด
+		if (function_exists('pm_set_request_budget_other')) {
+			if (!pm_set_request_budget_other($db_Project, (int)$project_id, $request_budget_other)) {
+				throw new Exception(mysqli_error($db_Project) ?: 'บันทึกแหล่งงบที่ยื่นขอไม่สำเร็จ');
 			}
 		}
 
@@ -8881,6 +8921,133 @@ if ($op === 'plan_admin_change_rechain_ajax') {
 	}
 }
 
+if ($op === 'plan_admin_update_change_content_ajax') {
+	header('Content-Type: application/json; charset=utf-8');
+	try {
+		while (ob_get_level()) {
+			@ob_end_clean();
+		}
+		@ob_start();
+		@ob_clean();
+		if (!(defined('PLAN_ADMIN') && PLAN_ADMIN)) {
+			echo json_encode(['ok' => 0, 'msg' => 'เฉพาะหน่วยแผนเท่านั้นที่แก้ไขคำขอเปลี่ยนแปลงได้'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		if (function_exists('pm_ensure_change_request_schema')) {
+			pm_ensure_change_request_schema($db_Project);
+		}
+		$request_id = isset($_POST['change_request_id']) ? (int)$_POST['change_request_id'] : 0;
+		if ($request_id <= 0 && isset($_POST['request_id'])) {
+			$request_id = (int)$_POST['request_id'];
+		}
+		$reason = trim((string)($_POST['reason'] ?? ''));
+		if ($request_id <= 0) {
+			echo json_encode(['ok' => 0, 'msg' => 'ไม่พบคำขอเปลี่ยนแปลง'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		if ($reason === '') {
+			echo json_encode(['ok' => 0, 'msg' => 'กรุณากรอกเหตุผลการขอเปลี่ยนแปลง'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		$detailsIn = isset($_POST['details_json']) ? (string)$_POST['details_json'] : '[]';
+		$detailsArr = json_decode($detailsIn, true);
+		$detailsNormalized = [];
+		if (is_array($detailsArr)) {
+			foreach ($detailsArr as $drow) {
+				if (!is_array($drow)) {
+					continue;
+				}
+				$orig = trim((string)($drow['original'] ?? ''));
+				$chg = trim((string)($drow['changed'] ?? ''));
+				if ($orig === '' && $chg === '') {
+					continue;
+				}
+				if ($orig === '' || $chg === '') {
+					echo json_encode(['ok' => 0, 'msg' => 'กรุณากรอกรายละเอียดเดิมและรายละเอียดการเปลี่ยนแปลงให้ครบทุกแถว'], JSON_UNESCAPED_UNICODE);
+					exit;
+				}
+				$detailsNormalized[] = ['original' => $orig, 'changed' => $chg];
+			}
+		}
+		if (empty($detailsNormalized)) {
+			echo json_encode(['ok' => 0, 'msg' => 'กรุณาระบุรายละเอียดการเปลี่ยนแปลงอย่างน้อย 1 รายการ'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		$sid = 0;
+		$sess_email = $_SESSION['r_email'] ?? '';
+		$sess_code = $_SESSION['code'] ?? '';
+		if ($sess_email !== '' && $sess_code !== '') {
+			$st = mysqli_prepare($db_person, 'SELECT id FROM staff WHERE email = ? AND code = ? LIMIT 1');
+			mysqli_stmt_bind_param($st, 'ss', $sess_email, $sess_code);
+			mysqli_stmt_execute($st);
+			$rs = mysqli_stmt_get_result($st);
+			$rw = $rs ? mysqli_fetch_assoc($rs) : null;
+			if ($rw) {
+				$sid = (int)($rw['id'] ?? 0);
+			}
+		}
+		if ($sid <= 0) {
+			echo json_encode(['ok' => 0, 'msg' => 'ไม่พบผู้ใช้งาน'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		$qReq = @mysqli_query($db_Project, "SELECT id, project_id FROM project_change_request WHERE id='" . (int)$request_id . "' AND status='1' LIMIT 1");
+		$req = $qReq ? mysqli_fetch_assoc($qReq) : null;
+		if (!$req) {
+			echo json_encode(['ok' => 0, 'msg' => 'ไม่พบคำขอเปลี่ยนแปลง'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		$esc = static function ($v) use ($db_Project) {
+			return mysqli_real_escape_string($db_Project, (string)$v);
+		};
+		$detailsJson = json_encode($detailsNormalized, JSON_UNESCAPED_UNICODE);
+		if ($detailsJson === false) {
+			echo json_encode(['ok' => 0, 'msg' => 'แปลงรายละเอียดไม่สำเร็จ'], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		$okUp = @mysqli_query(
+			$db_Project,
+			"UPDATE project_change_request SET
+				reason='" . $esc($reason) . "',
+				details_json='" . $esc($detailsJson) . "',
+				updated_at=NOW()
+			 WHERE id='" . (int)$request_id . "' AND status='1'
+			 LIMIT 1"
+		);
+		if (!$okUp) {
+			echo json_encode(['ok' => 0, 'msg' => (mysqli_error($db_Project) ?: 'บันทึกไม่สำเร็จ')], JSON_UNESCAPED_UNICODE);
+			exit;
+		}
+		@mysqli_query($db_Project, "CREATE TABLE IF NOT EXISTS project_plan_review_log (
+			id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+			project_id INT UNSIGNED NOT NULL,
+			action_type VARCHAR(32) NOT NULL DEFAULT '',
+			actor_staff_id INT UNSIGNED NULL,
+			note MEDIUMTEXT NULL,
+			meta_json MEDIUMTEXT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (id),
+			KEY idx_pprl_project (project_id, created_at),
+			KEY idx_pprl_actor (actor_staff_id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+		$pid = (int)($req['project_id'] ?? 0);
+		$metaEsc = $esc(json_encode([
+			'request_id' => $request_id,
+			'reason' => $reason,
+			'details' => $detailsNormalized,
+		], JSON_UNESCAPED_UNICODE));
+		@mysqli_query(
+			$db_Project,
+			"INSERT INTO project_plan_review_log (project_id, action_type, actor_staff_id, note, meta_json, created_at)
+			 VALUES ('" . (int)$pid . "', 'change_content_edit', '" . (int)$sid . "', '" . $esc('แก้ไขเหตุผล/รายละเอียดคำขอเปลี่ยนแปลง') . "', '" . $metaEsc . "', NOW())"
+		);
+		echo json_encode(['ok' => 1, 'msg' => 'บันทึกเหตุผลและรายละเอียดแล้ว', 'details' => $detailsNormalized], JSON_UNESCAPED_UNICODE);
+		exit;
+	} catch (Throwable $e) {
+		echo json_encode(['ok' => 0, 'msg' => 'เกิดข้อผิดพลาด: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
+		exit;
+	}
+}
+
 if ($op === 'plan_admin_apply_change_ajax') {
 	header('Content-Type: application/json; charset=utf-8');
 	try {
@@ -10163,7 +10330,10 @@ if (!function_exists('pm_render_plan_budget_source_editor')) {
 			var chosen = [];
 			function money(n){
 				var x = parseFloat(n);
-				if (!isFinite(x)) return '0.00';
+				if (!isFinite(x)) return '0';
+				if (Math.abs(x - Math.round(x)) < 0.0000001) {
+					return Math.round(x).toLocaleString('en-US', {maximumFractionDigits:0});
+				}
 				return x.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
 			}
 			function chosenSum(){
@@ -12239,6 +12409,7 @@ if ($op === 'add_project') {
 	$saved_persons = [];
 	$saved_deps = [];
 	$saved_budgets = [];
+	$pm_request_budget_other = '';
 	if ($edit_project_id > 0) {
 		$saved_pre = getPreProjectID($db_Project, $edit_project_id);
 		if (is_array($saved_pre)
@@ -12258,6 +12429,15 @@ if ($op === 'add_project') {
 			&& function_exists('pm_ensure_project_budget_from_notify_log')
 			&& pm_ensure_project_budget_from_notify_log($db_Project, (int)$edit_project_id, (int)($staff_id ?? 0))) {
 			$saved_budgets = getProjectBudgetList($db_Project, $edit_project_id);
+		}
+		if (function_exists('pm_ensure_request_budget_schema')) {
+			pm_ensure_request_budget_schema($db_Project);
+		}
+		$pm_request_budget_other = function_exists('pm_get_request_budget_other')
+			? pm_get_request_budget_other($db_Project, (int)$edit_project_id, is_array($saved_pre) ? $saved_pre : null)
+			: '';
+		if (is_array($saved_pre)) {
+			$saved_pre['request_budget_other'] = $pm_request_budget_other;
 		}
 		if (is_array($saved_pre)) {
 			$years_select = $saved_pre['year_project'] ?? $years_select;
@@ -13142,11 +13322,23 @@ if ($op === 'add_project') {
 		.pm-ber-line-detail-row .pm-ber-line-detail{
 			padding: 0;
 		}
-		.pm-ber-line-edit-btn{
+		.pm-ber-line-edit-btn,
+		.pm-ber-line-detail-btn{
 			font-size: .72rem;
 			padding: .12rem .45rem;
 			line-height: 1.3;
 			border-radius: .35rem;
+		}
+		.pm-ber-line-detail-btn{
+			border-color: #93c5fd;
+			color: #1d4ed8;
+			background: #eff6ff;
+			font-weight: 700;
+		}
+		.pm-ber-line-detail-btn:hover{
+			background: #dbeafe;
+			border-color: #60a5fa;
+			color: #1e40af;
 		}
 		.pm-ber-confirmed-badge{
 			display: inline-flex;
@@ -16554,7 +16746,8 @@ if ($op === 'add_project') {
 									<label class="col-md-3 col-form-label text-90">แหล่งงบที่ยื่นขอ (ถ้ามี)</label>
 									<div class="col-md-9">
 										<input type="hidden" name="code_budget" value="99">
-										<input type="text" name="budget_other" class="form-control form-control-sm" placeholder="ระบุแหล่งงบที่ยื่นขอ (ถ้ามี)" value="<?= htmlspecialchars($saved_budgets[0]['budget_other'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+										<input type="text" name="request_budget_other" class="form-control form-control-sm" placeholder="ระบุแหล่งงบที่ยื่นขอ (ถ้ามี)" value="<?= htmlspecialchars((string)($pm_request_budget_other ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+										<input type="hidden" name="budget_other" value="<?= htmlspecialchars((string)($pm_request_budget_other ?? ''), ENT_QUOTES, 'UTF-8') ?>">
 									</div>
 								</div>
 								<div class="form-group row mb-2">
@@ -17192,7 +17385,7 @@ if ($op === 'add_project') {
 					var nature = getValBySel('select[name="code_nature"]');
 					var type = getValBySel('select[name="code_type"]');
 					var budget = '99';
-					var budgetOther = getValBySel('input[name="budget_other"]');
+					var budgetOther = getValBySel('input[name="request_budget_other"]') || getValBySel('input[name="budget_other"]');
 
 					// Date: ใช้ค่า raw เหมือนที่หน้ามีอยู่ (เพื่อเทียบง่าย)
 					var startDateRaw = '';
@@ -17300,7 +17493,9 @@ if ($op === 'add_project') {
 
 					var nature = optText(modal ? modal.querySelector('select[name="code_nature"]') : null);
 					var type = optText(modal ? modal.querySelector('select[name="code_type"]') : null);
-					var budgetOther = modal ? getInputVal('#modalGeneralInfo input[name="budget_other"]') : '';
+					var budgetOther = modal
+						? (getInputVal('#modalGeneralInfo input[name="request_budget_other"]') || getInputVal('#modalGeneralInfo input[name="budget_other"]'))
+						: '';
 					var budgetName = budgetOther || '-';
 
 					var startDateTxt = (document.getElementById('start_date_text')?.value || '').trim() || (document.getElementById('project_start_date')?.value || '').trim();
@@ -17387,7 +17582,7 @@ if ($op === 'add_project') {
 					var right = [
 						{ label: 'ลักษณะโครงการ', value: nature || '-', required: true },
 						{ label: 'ประเภทโครงการ', value: type || '-', required: true },
-						{ label: 'แหล่งงบที่ยื่นขอ (ถ้ามี)', value: budgetName || '-' },
+						{ label: 'แหล่งงบที่ยื่นขอ (ถ้ามี)', value: budgetName || '-', preLine: true },
 						{ label: 'ระยะเวลาดำเนินโครงการ', value: (startDateTxt || endDateTxt) ? ('เริ่ม: ' + (startDateTxt || '-') + ' | สิ้นสุด: ' + (endDateTxt || '-')) : '-', required: true },
 						{ label: 'พื้นที่ดำเนินโครงการ', value: location || '-' },
 						{ label: 'หมายเหตุ (ถ้ามี)', value: generalNote || '-' }
@@ -17400,9 +17595,10 @@ if ($op === 'add_project') {
 							v = (item.value || '-') + (phone ? ' (' + phone + ')' : '');
 						}
 						var req = (window.PM_SHOW_SECTION_REQUIRED && item.required) ? ' <span class="text-danger">*</span>' : '';
+						var valStyle = item.preLine ? ' style="white-space:pre-line;line-height:1.45;"' : '';
 						return '<div class="d-flex py-1 align-items-start" style="gap:10px;">'
 							+ '<div class="summary-label">' + escapeHtml(item.label) + req + ' :</div>'
-							+ '<div class="summary-value flex-grow-1">' + escapeHtml(v) + '</div>'
+							+ '<div class="summary-value flex-grow-1"' + valStyle + '>' + escapeHtml(v) + '</div>'
 							+ '</div>';
 					}
 
@@ -20116,7 +20312,7 @@ if ($op === 'add_project') {
 					?>
 					<div class="pm-notify-result-grid">
 						<div class="k">แหล่งงบประมาณ :</div>
-						<div class="v"><?= htmlspecialchars($pm_notify_budget_src, ENT_QUOTES, 'UTF-8') ?></div>
+						<div class="v" style="white-space:pre-line;line-height:1.45;"><?= function_exists('pm_budget_source_label_html') ? pm_budget_source_label_html((string)$pm_notify_budget_src) : nl2br(htmlspecialchars((string)$pm_notify_budget_src, ENT_QUOTES, 'UTF-8'), false) ?></div>
 						<div class="k">วงเงิน :</div>
 						<div class="v"><?= number_format($pm_notify_budget_amt, 2) ?> บาท</div>
 						<div class="k">ผลการพิจารณา :</div>
@@ -20354,109 +20550,6 @@ if ($op === 'add_project') {
 						</div>
 					<?php endif; ?>
 				</details>
-				<?php endif; ?>
-				<?php if (!empty($pm_change_history)): ?>
-				<div class="alert mt-3 mb-2 pm-chg-hist-card" id="pmChangeHistory">
-					<div class="pm-notify-result-title" style="color:#9a3412;">
-						<i class="fa fa-exchange-alt mr-1"></i> คำขอเปลี่ยนแปลงโครงการ
-					</div>
-					<p class="mb-1" style="font-size:.86rem;color:#78716c;font-weight:650;">
-						เมื่อได้รับอนุมัติ หน่วยแผนเป็นผู้แก้ไขโครงการตามรายละเอียดที่ยื่น — สามารถยื่นคำขอใหม่ได้เมื่อคำขอรอบก่อนเสร็จสิ้นการพิจารณา
-					</p>
-					<?php foreach ($pm_change_history as $__chi => $__ch):
-						$__chSt = trim((string)($__ch['req_status'] ?? ''));
-						$__chApplied = trim((string)($__ch['applied_at'] ?? ''));
-						$__chBadge = 'warn';
-						$__chTxt = 'อยู่ระหว่างพิจารณา';
-						$__chIcon = 'fa-hourglass-half';
-						if ($__chSt === 'rejected') {
-							$__chBadge = 'no';
-							$__chTxt = 'ตีกลับ';
-							$__chIcon = 'fa-undo';
-						} elseif ($__chSt === 'approved' && $__chApplied !== '') {
-							$__chBadge = 'ok';
-							$__chTxt = 'แก้ไขแล้ว';
-							$__chIcon = 'fa-check-circle';
-						} elseif ($__chSt === 'approved') {
-							$__chBadge = 'warn';
-							$__chTxt = 'อนุมัติแล้ว รอหน่วยแผนแก้ไข';
-							$__chIcon = 'fa-edit';
-						} elseif ($__chSt === 'waiting_plan') {
-							$__chTxt = 'รอหน่วยแผนเลือกผู้อนุมัติ';
-						} elseif ($__chSt === 'pending_approve') {
-							$__chTxt = 'รออนุมัติ';
-						}
-						$__chAt = function_exists('pm_change_thai_dt') ? pm_change_thai_dt($__ch['created_at'] ?? '') : (string)($__ch['created_at'] ?? '');
-						$__chApplyAt = function_exists('pm_change_thai_dt') ? pm_change_thai_dt($__chApplied) : $__chApplied;
-						$__chApplyName = '';
-						$__chApplySid = (int)($__ch['applied_by_staff_id'] ?? 0);
-						if ($__chApplySid > 0) {
-							$qChN = @mysqli_query($db_person, "SELECT CONCAT(TRIM(IFNULL(fname,'')),' ',TRIM(IFNULL(lname,''))) AS n FROM staff WHERE id='" . $__chApplySid . "' LIMIT 1");
-							$rChN = $qChN ? mysqli_fetch_assoc($qChN) : null;
-							$__chApplyName = trim((string)($rChN['n'] ?? ''));
-						}
-						$__chDetails = is_array($__ch['details'] ?? null) ? $__ch['details'] : [];
-					?>
-					<div class="pm-chg-hist-round">
-						<div class="pm-chg-hist-round-head">
-							<span class="pm-chg-hist-round-n">รอบที่ <?= (int)$__chi + 1 ?></span>
-							<span class="pm-notify-result-badge <?= htmlspecialchars($__chBadge, ENT_QUOTES, 'UTF-8') ?>">
-								<i class="fa <?= htmlspecialchars($__chIcon, ENT_QUOTES, 'UTF-8') ?>"></i>
-								<?= htmlspecialchars($__chTxt, ENT_QUOTES, 'UTF-8') ?>
-							</span>
-							<span class="text-muted" style="font-size:.82rem;font-weight:650;">ยื่น <?= htmlspecialchars($__chAt !== '' ? $__chAt : '-', ENT_QUOTES, 'UTF-8') ?></span>
-							<?php if ($__chSt === 'approved'): ?>
-								<button type="button"
-									class="btn btn-primary btn-sm font-weight-bold px-3 ml-auto pm-chg-open-memo"
-									data-request-id="<?= (int)($__ch['id'] ?? 0) ?>"
-									style="border-radius:999px;box-shadow:0 10px 18px -14px rgba(37,99,235,.9);">
-									<i class="fa fa-file-alt mr-1"></i> บันทึกข้อความ
-								</button>
-							<?php endif; ?>
-						</div>
-						<?php if (trim((string)($__ch['reason'] ?? '')) !== ''): ?>
-							<div style="font-size:.88rem;color:#44403c;"><span style="font-weight:800;color:#9a3412;">เหตุผล :</span> <?= nl2br(htmlspecialchars((string)$__ch['reason'], ENT_QUOTES, 'UTF-8')) ?></div>
-						<?php endif; ?>
-						<?php if (!empty($__chDetails)): ?>
-							<table class="table table-sm table-bordered pm-chg-hist-pairs mb-1">
-								<thead><tr><th>รายละเอียดเดิม</th><th>รายละเอียดการเปลี่ยนแปลง</th></tr></thead>
-								<tbody>
-								<?php foreach ($__chDetails as $__cd): ?>
-									<tr>
-										<td><?= nl2br(htmlspecialchars((string)($__cd['original'] ?? ''), ENT_QUOTES, 'UTF-8')) ?></td>
-										<td><?= nl2br(htmlspecialchars((string)($__cd['changed'] ?? ''), ENT_QUOTES, 'UTF-8')) ?></td>
-									</tr>
-								<?php endforeach; ?>
-								</tbody>
-							</table>
-						<?php endif; ?>
-						<?php if ($__chSt === 'approved' && $__chApplied !== ''): ?>
-							<div class="pm-chg-hist-apply">
-								<div class="pm-chg-hist-apply-meta">
-									<i class="fa fa-user mr-1"></i> แก้ไขโดย : <?= htmlspecialchars($__chApplyName !== '' ? $__chApplyName : '-', ENT_QUOTES, 'UTF-8') ?>
-									<span class="mx-2">·</span>
-									<i class="fa fa-clock mr-1"></i> <?= htmlspecialchars($__chApplyAt !== '' ? $__chApplyAt : '-', ENT_QUOTES, 'UTF-8') ?>
-								</div>
-								<?php if (trim((string)($__ch['apply_note'] ?? '')) !== ''): ?>
-									<div class="mt-1" style="font-size:.86rem;color:#44403c;white-space:pre-wrap;"><?= htmlspecialchars((string)$__ch['apply_note'], ENT_QUOTES, 'UTF-8') ?></div>
-								<?php endif; ?>
-							</div>
-						<?php elseif ($__chSt === 'approved' && $__chApplied === '' && !empty($pm_is_plan_admin)): ?>
-							<div class="pm-chg-hist-apply">
-								<div class="mb-1" style="font-size:.86rem;font-weight:800;color:#9a3412;">หน่วยแผนแก้ไขโครงการตามรายการด้านบน แล้วบันทึกสิ่งที่แก้ไข</div>
-								<textarea class="form-control form-control-sm pm-chg-apply-note" rows="3" placeholder="ระบุรายละเอียดที่แก้ไขในโครงการ"></textarea>
-								<button type="button" class="btn btn-sm btn-warning font-weight-bold mt-2 pm-chg-apply-btn" data-request-id="<?= (int)($__ch['id'] ?? 0) ?>">
-									<i class="fa fa-save mr-1"></i> บันทึกว่าแก้ไขแล้ว
-								</button>
-							</div>
-						<?php elseif ($__chSt === 'approved' && $__chApplied === ''): ?>
-							<div class="pm-chg-hist-apply" style="color:#64748b;font-size:.86rem;font-weight:650;">
-								รอหน่วยแผนแก้ไขโครงการตามรายละเอียดที่ยื่นขอ
-							</div>
-						<?php endif; ?>
-					</div>
-					<?php endforeach; ?>
-				</div>
 				<?php endif; ?>
 				<?php
 					$pm_can_hist_st = is_array($pm_cancel_req ?? null) ? trim((string)($pm_cancel_req['req_status'] ?? '')) : '';
@@ -21086,7 +21179,7 @@ if ($op === 'add_project') {
 						</div>
 					<?php endif; ?>
 					<?php if (!empty($pm_plan_can_edit_budget_src) && empty($pm_show_plan_admin_operate_chain) && empty($pm_plan_budget_editor_rendered) && function_exists('pm_render_plan_budget_source_editor')): ?>
-						<div class="small text-muted mt-2">แหล่งงบ: <strong class="text-dark"><?= htmlspecialchars(($pm_pa_memo_budget_src !== '' && $pm_pa_memo_budget_src !== '-') ? $pm_pa_memo_budget_src : 'ยังไม่ได้เลือก', ENT_QUOTES, 'UTF-8') ?></strong></div>
+						<div class="small text-muted mt-2">แหล่งงบ: <strong class="text-dark" style="white-space:pre-line;line-height:1.45;display:inline-block;"><?= function_exists('pm_budget_source_label_html') ? pm_budget_source_label_html((string)(($pm_pa_memo_budget_src !== '' && $pm_pa_memo_budget_src !== '-') ? $pm_pa_memo_budget_src : 'ยังไม่ได้เลือก')) : htmlspecialchars(($pm_pa_memo_budget_src !== '' && $pm_pa_memo_budget_src !== '-') ? $pm_pa_memo_budget_src : 'ยังไม่ได้เลือก', ENT_QUOTES, 'UTF-8') ?></strong></div>
 						<?php
 							$pm_plan_budget_editor_rendered = true;
 							pm_render_plan_budget_source_editor((int)$edit_project_id, (string)($pm_plan_budget_code ?? ''), (string)($pm_plan_budget_other ?? ''), is_array($pm_plan_budget_opts ?? null) ? $pm_plan_budget_opts : [], (string)($years_select ?? ''));
@@ -21168,6 +21261,159 @@ if ($op === 'add_project') {
 							}
 						?>
 					<?php endif; ?>
+				</div>
+				<?php endif; ?>
+				<?php if (!empty($pm_change_history)): ?>
+				<div class="alert mt-3 mb-2 pm-chg-hist-card" id="pmChangeHistory">
+					<div class="pm-notify-result-title" style="color:#9a3412;">
+						<i class="fa fa-exchange-alt mr-1"></i> คำขอเปลี่ยนแปลงโครงการ
+					</div>
+					<p class="mb-1" style="font-size:.86rem;color:#78716c;font-weight:650;">
+						เมื่อได้รับอนุมัติ หน่วยแผนเป็นผู้แก้ไขโครงการตามรายละเอียดที่ยื่น — สามารถยื่นคำขอใหม่ได้เมื่อคำขอรอบก่อนเสร็จสิ้นการพิจารณา
+					</p>
+					<?php foreach ($pm_change_history as $__chi => $__ch):
+						$__chSt = trim((string)($__ch['req_status'] ?? ''));
+						$__chApplied = trim((string)($__ch['applied_at'] ?? ''));
+						$__chBadge = 'warn';
+						$__chTxt = 'อยู่ระหว่างพิจารณา';
+						$__chIcon = 'fa-hourglass-half';
+						if ($__chSt === 'rejected') {
+							$__chBadge = 'no';
+							$__chTxt = 'ตีกลับ';
+							$__chIcon = 'fa-undo';
+						} elseif ($__chSt === 'approved' && $__chApplied !== '') {
+							$__chBadge = 'ok';
+							$__chTxt = 'แก้ไขแล้ว';
+							$__chIcon = 'fa-check-circle';
+						} elseif ($__chSt === 'approved') {
+							$__chBadge = 'warn';
+							$__chTxt = 'อนุมัติแล้ว รอหน่วยแผนแก้ไข';
+							$__chIcon = 'fa-edit';
+						} elseif ($__chSt === 'waiting_plan') {
+							$__chTxt = 'รอหน่วยแผนเลือกผู้อนุมัติ';
+						} elseif ($__chSt === 'pending_approve') {
+							$__chTxt = 'รออนุมัติ';
+						}
+						$__chAt = function_exists('pm_change_thai_dt') ? pm_change_thai_dt($__ch['created_at'] ?? '') : (string)($__ch['created_at'] ?? '');
+						$__chApplyAt = function_exists('pm_change_thai_dt') ? pm_change_thai_dt($__chApplied) : $__chApplied;
+						$__chApplyName = '';
+						$__chApplySid = (int)($__ch['applied_by_staff_id'] ?? 0);
+						if ($__chApplySid > 0) {
+							$qChN = @mysqli_query($db_person, "SELECT CONCAT(TRIM(IFNULL(fname,'')),' ',TRIM(IFNULL(lname,''))) AS n FROM staff WHERE id='" . $__chApplySid . "' LIMIT 1");
+							$rChN = $qChN ? mysqli_fetch_assoc($qChN) : null;
+							$__chApplyName = trim((string)($rChN['n'] ?? ''));
+						}
+						$__chDetails = is_array($__ch['details'] ?? null) ? $__ch['details'] : [];
+					?>
+					<div class="pm-chg-hist-round">
+						<div class="pm-chg-hist-round-head">
+							<span class="pm-chg-hist-round-n">รอบที่ <?= (int)$__chi + 1 ?></span>
+							<span class="pm-notify-result-badge <?= htmlspecialchars($__chBadge, ENT_QUOTES, 'UTF-8') ?>">
+								<i class="fa <?= htmlspecialchars($__chIcon, ENT_QUOTES, 'UTF-8') ?>"></i>
+								<?= htmlspecialchars($__chTxt, ENT_QUOTES, 'UTF-8') ?>
+							</span>
+							<span class="text-muted" style="font-size:.82rem;font-weight:650;">ยื่น <?= htmlspecialchars($__chAt !== '' ? $__chAt : '-', ENT_QUOTES, 'UTF-8') ?></span>
+							<?php if ($__chSt === 'approved'): ?>
+								<button type="button"
+									class="btn btn-primary btn-sm font-weight-bold px-3 ml-auto pm-chg-open-memo"
+									data-request-id="<?= (int)($__ch['id'] ?? 0) ?>"
+									style="border-radius:999px;box-shadow:0 10px 18px -14px rgba(37,99,235,.9);">
+									<i class="fa fa-file-alt mr-1"></i> บันทึกข้อความ
+								</button>
+							<?php endif; ?>
+						</div>
+						<div class="pm-chg-hist-content" data-request-id="<?= (int)($__ch['id'] ?? 0) ?>">
+							<div class="pm-chg-hist-view">
+								<?php if (!empty($pm_is_plan_admin)): ?>
+									<div class="d-flex justify-content-end mb-2">
+										<button type="button" class="btn btn-sm btn-pm-edit-orange pm-chg-edit-open">
+											<i class="fa fa-edit mr-1"></i> แก้ไข
+										</button>
+									</div>
+								<?php endif; ?>
+								<?php if (trim((string)($__ch['reason'] ?? '')) !== ''): ?>
+									<div class="pm-chg-view-reason" style="font-size:.88rem;color:#44403c;"><span style="font-weight:800;color:#9a3412;">เหตุผล :</span> <?= nl2br(htmlspecialchars((string)$__ch['reason'], ENT_QUOTES, 'UTF-8')) ?></div>
+								<?php endif; ?>
+								<?php if (!empty($__chDetails)): ?>
+									<table class="table table-sm table-bordered pm-chg-hist-pairs mb-1 pm-chg-view-table">
+										<thead><tr><th>รายละเอียดเดิม</th><th>รายละเอียดการเปลี่ยนแปลง</th></tr></thead>
+										<tbody>
+										<?php foreach ($__chDetails as $__cd): ?>
+											<tr>
+												<td><?= nl2br(htmlspecialchars((string)($__cd['original'] ?? ''), ENT_QUOTES, 'UTF-8')) ?></td>
+												<td><?= nl2br(htmlspecialchars((string)($__cd['changed'] ?? ''), ENT_QUOTES, 'UTF-8')) ?></td>
+											</tr>
+										<?php endforeach; ?>
+										</tbody>
+									</table>
+								<?php endif; ?>
+							</div>
+							<?php if (!empty($pm_is_plan_admin)): ?>
+							<div class="pm-chg-hist-edit d-none" data-request-id="<?= (int)($__ch['id'] ?? 0) ?>">
+								<div class="mb-2">
+									<label class="mb-1" style="font-size:.88rem;font-weight:800;color:#9a3412;">เหตุผล</label>
+									<textarea class="form-control form-control-sm pm-chg-edit-reason" rows="3" placeholder="ระบุเหตุผลการขอเปลี่ยนแปลง"><?= htmlspecialchars((string)($__ch['reason'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea>
+								</div>
+								<div class="d-flex justify-content-between align-items-center mb-1">
+									<label class="mb-0" style="font-size:.88rem;font-weight:800;color:#9a3412;">รายละเอียดในตาราง</label>
+									<button type="button" class="btn btn-sm btn-outline-primary pm-chg-edit-add-row">
+										<i class="fa fa-plus mr-1"></i> เพิ่มแถว
+									</button>
+								</div>
+								<table class="table table-sm table-bordered pm-chg-hist-pairs pm-chg-edit-table mb-1">
+									<thead><tr><th>รายละเอียดเดิม</th><th>รายละเอียดการเปลี่ยนแปลง</th><th style="width:42px;"></th></tr></thead>
+									<tbody>
+									<?php
+										$__editDetails = !empty($__chDetails) ? $__chDetails : [['original' => '', 'changed' => '']];
+										foreach ($__editDetails as $__cd):
+									?>
+										<tr>
+											<td><textarea class="form-control form-control-sm pm-chg-edit-original" rows="3" placeholder="รายละเอียดเดิม"><?= htmlspecialchars((string)($__cd['original'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea></td>
+											<td><textarea class="form-control form-control-sm pm-chg-edit-changed" rows="3" placeholder="รายละเอียดการเปลี่ยนแปลง"><?= htmlspecialchars((string)($__cd['changed'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea></td>
+											<td class="text-center align-middle">
+												<button type="button" class="btn btn-sm btn-outline-danger pm-chg-edit-del-row" title="ลบแถว"><i class="fa fa-trash"></i></button>
+											</td>
+										</tr>
+									<?php endforeach; ?>
+									</tbody>
+								</table>
+								<div class="text-right" style="display:flex;justify-content:flex-end;gap:.45rem;flex-wrap:wrap;">
+									<button type="button" class="btn btn-sm btn-outline-secondary pm-chg-edit-cancel">
+										<i class="fa fa-times mr-1"></i> ยกเลิก
+									</button>
+									<button type="button" class="btn btn-sm btn-primary font-weight-bold pm-chg-edit-save" data-request-id="<?= (int)($__ch['id'] ?? 0) ?>">
+										<i class="fa fa-save mr-1"></i> บันทึกเหตุผล/รายละเอียด
+									</button>
+								</div>
+							</div>
+							<?php endif; ?>
+						</div>
+						<?php if ($__chSt === 'approved' && $__chApplied !== ''): ?>
+							<div class="pm-chg-hist-apply">
+								<div class="pm-chg-hist-apply-meta">
+									<i class="fa fa-user mr-1"></i> แก้ไขโดย : <?= htmlspecialchars($__chApplyName !== '' ? $__chApplyName : '-', ENT_QUOTES, 'UTF-8') ?>
+									<span class="mx-2">·</span>
+									<i class="fa fa-clock mr-1"></i> <?= htmlspecialchars($__chApplyAt !== '' ? $__chApplyAt : '-', ENT_QUOTES, 'UTF-8') ?>
+								</div>
+								<?php if (trim((string)($__ch['apply_note'] ?? '')) !== ''): ?>
+									<div class="mt-1" style="font-size:.86rem;color:#44403c;white-space:pre-wrap;"><?= htmlspecialchars((string)$__ch['apply_note'], ENT_QUOTES, 'UTF-8') ?></div>
+								<?php endif; ?>
+							</div>
+						<?php elseif ($__chSt === 'approved' && $__chApplied === '' && !empty($pm_is_plan_admin)): ?>
+							<div class="pm-chg-hist-apply">
+								<div class="mb-1" style="font-size:.86rem;font-weight:800;color:#9a3412;">หน่วยแผนแก้ไขโครงการตามรายการด้านบน แล้วบันทึกสิ่งที่แก้ไข</div>
+								<textarea class="form-control form-control-sm pm-chg-apply-note" rows="3" placeholder="ระบุรายละเอียดที่แก้ไขในโครงการ"></textarea>
+								<button type="button" class="btn btn-sm btn-warning font-weight-bold mt-2 pm-chg-apply-btn" data-request-id="<?= (int)($__ch['id'] ?? 0) ?>">
+									<i class="fa fa-save mr-1"></i> บันทึกว่าแก้ไขแล้ว
+								</button>
+							</div>
+						<?php elseif ($__chSt === 'approved' && $__chApplied === ''): ?>
+							<div class="pm-chg-hist-apply" style="color:#64748b;font-size:.86rem;font-weight:650;">
+								รอหน่วยแผนแก้ไขโครงการตามรายละเอียดที่ยื่นขอ
+							</div>
+						<?php endif; ?>
+					</div>
+					<?php endforeach; ?>
 				</div>
 				<?php endif; ?>
 				<?php if (!empty($pm_can_fill_project_results)): ?>
@@ -21303,7 +21549,7 @@ if ($op === 'add_project') {
 						<span class="mx-1">·</span>
 						<span>งบ <?= htmlspecialchars($pm_pa_memo_budget_fmt, ENT_QUOTES, 'UTF-8') ?> บาท</span>
 						<span class="mx-1">·</span>
-						<span>แหล่งงบ: <strong class="text-dark"><?= htmlspecialchars(($pm_pa_memo_budget_src !== '' && $pm_pa_memo_budget_src !== '-') ? $pm_pa_memo_budget_src : 'ยังไม่ได้เลือก', ENT_QUOTES, 'UTF-8') ?></strong></span>
+						<span>แหล่งงบ: <strong class="text-dark" style="white-space:pre-line;line-height:1.45;display:inline-block;"><?= function_exists('pm_budget_source_label_html') ? pm_budget_source_label_html((string)(($pm_pa_memo_budget_src !== '' && $pm_pa_memo_budget_src !== '-') ? $pm_pa_memo_budget_src : 'ยังไม่ได้เลือก')) : htmlspecialchars(($pm_pa_memo_budget_src !== '' && $pm_pa_memo_budget_src !== '-') ? $pm_pa_memo_budget_src : 'ยังไม่ได้เลือก', ENT_QUOTES, 'UTF-8') ?></strong></span>
 					</div>
 					<?php if (!empty($pm_plan_can_edit_budget_src) && empty($pm_plan_budget_editor_rendered) && function_exists('pm_render_plan_budget_source_editor')): ?>
 						<?php
@@ -25494,7 +25740,7 @@ if ($op === 'add_project') {
 				var $m = $('#modalGeneralInfo');
 				// NOTE: requirement ล่าสุดต้องให้แก้ "ระยะเวลาดำเนินโครงการ" ได้ (เดือน/ปี เริ่มต้น-สิ้นสุด)
 				// ดังนั้นอย่าปิด #project_start_date/#project_end_date ในโหมดนี้
-				$m.find('select[name="head_staff"], input[name="head_phone"], select[name="code_unit"], select[name="code_nature"], select[name="code_type"], select[name="code_budget"], input[name="budget_other"], select[name="participant_staff[]"], input[name="participant_phone[]"], select[name="code_unit_co[]"], input[name="code_unit_co_other[]"]')
+				$m.find('select[name="head_staff"], input[name="head_phone"], select[name="code_unit"], select[name="code_nature"], select[name="code_type"], select[name="code_budget"], input[name="budget_other"], input[name="request_budget_other"], select[name="participant_staff[]"], input[name="participant_phone[]"], select[name="code_unit_co[]"], input[name="code_unit_co_other[]"]')
 					.prop('disabled', true).prop('readonly', true);
 				$m.find('.btn-add-participant, .btn-add-unit-co, .btn-remove-participant, .btn-remove-unit-co').prop('disabled', true).addClass('disabled');
 				$m.find('select[name="coordinator_staff"], input[name="coordinator_phone"], textarea[name="location"], textarea[name="general_note"], #project_start_date, #project_end_date').prop('disabled', false).prop('readonly', false);
@@ -26759,6 +27005,7 @@ if ($op === 'add_project') {
 					}
 				});
 			})();
+			<?php endif; ?>
 
 			(function initBudgetDisburseExternalDoc(){
 				var $modal = $('#modalBudgetDisburseExternal');
@@ -26957,16 +27204,23 @@ if ($op === 'add_project') {
 					html += '<div class="pm-bdext-hero-subject">' + escHtml(w.subject || line.line_detail || 'รายการเบิกจ่าย') + '</div>';
 					html += '<div class="pm-bdext-hero-amount">' + fmtMoney(w.amount != null ? w.amount : line.amount) + ' <small class="text-muted font-weight-bold">บาท</small></div>';
 					html += '</div>';
+					var requesterName = String(w.applicant_name || line.requester_name || '').trim();
+					var dateTxt = w.date || line.confirmed_at || line.report_created_at || '';
 					html += '<div class="pm-bdext-hero-meta">';
 					html += '<span class="pm-bdext-status ' + statusClass(rawSt) + '"><i class="fa fa-flag"></i>' + escHtml(stLabel) + '</span>';
-					if (w.date || line.confirmed_at) {
-						html += '<span class="pm-bdext-chip"><i class="fa fa-calendar-alt"></i>' + escHtml(fmtThaiDateTime(w.date || line.confirmed_at)) + '</span>';
+					if (requesterName) {
+						html += '<span class="pm-bdext-chip"><i class="fa fa-user"></i>ผู้เบิกจ่าย: ' + escHtml(requesterName) + '</span>';
+					}
+					if (dateTxt) {
+						html += '<span class="pm-bdext-chip"><i class="fa fa-calendar-alt"></i>' + escHtml(fmtThaiDateTime(dateTxt)) + '</span>';
 					}
 					html += '<span class="pm-bdext-chip"><i class="fa fa-barcode"></i>' + escHtml(res.project_code || w.project_code || '-') + '</span>';
 					html += '</div>';
 					if (fromLocal) {
 						html += '<div class="pm-bdext-local-note mt-2"><i class="fa fa-info-circle mr-1"></i>';
-						if (reconcile === 'pending_handoff') {
+						if (rawSt === 'draft_local' || String(line.doc_status || '') !== 'confirmed') {
+							html += 'แสดงจากข้อมูลในรายงานการใช้จ่าย (ยังไม่ได้ยืนยันการเบิกจ่าย)';
+						} else if (reconcile === 'pending_handoff') {
 							html += 'ยืนยันในรายงานการใช้จ่ายแล้ว แต่ยังรอบันทึกเอกสารในระบบเบิกจ่าย';
 						} else if (reconcile === 'confirmed_no_withdraw') {
 							html += 'ยืนยันในรายงานการใช้จ่ายแล้ว ยังไม่พบรายการในระบบเบิกจ่าย';
@@ -26978,6 +27232,11 @@ if ($op === 'add_project') {
 					html += '</div>';
 
 					html += '<div class="pm-bdext-grid">';
+					html += '<div class="pm-bdext-info-card"><div class="pm-bdext-info-label">ผู้เบิกจ่าย</div><div class="pm-bdext-info-value">' + escHtml(requesterName || '-') + '</div></div>';
+					html += '<div class="pm-bdext-info-card"><div class="pm-bdext-info-label">วันที่</div><div class="pm-bdext-info-value">' + escHtml(dateTxt ? fmtThaiDateTime(dateTxt) : '-') + '</div></div>';
+					if (line.item_name) {
+						html += '<div class="pm-bdext-info-card"><div class="pm-bdext-info-label">รายการค่าใช้จ่าย</div><div class="pm-bdext-info-value">' + escHtml(line.item_name) + '</div></div>';
+					}
 					if (w.project_name || res.project_name) {
 						html += '<div class="pm-bdext-info-card"><div class="pm-bdext-info-label">ชื่อโครงการ</div><div class="pm-bdext-info-value">' + escHtml(w.project_name || res.project_name || '') + '</div></div>';
 					}
@@ -26985,7 +27244,7 @@ if ($op === 'add_project') {
 						html += '<div class="pm-bdext-info-card"><div class="pm-bdext-info-label">กิจกรรม</div><div class="pm-bdext-info-value">' + escHtml(line.activity_name || w.project_activity_name || '') + '</div></div>';
 					}
 					if (line.line_detail) {
-						html += '<div class="pm-bdext-info-card"><div class="pm-bdext-info-label">รายการในโครงการ</div><div class="pm-bdext-info-value">' + escHtml(line.line_detail) + '</div></div>';
+						html += '<div class="pm-bdext-info-card"><div class="pm-bdext-info-label">รายละเอียดรายการ</div><div class="pm-bdext-info-value">' + escHtml(line.line_detail) + '</div></div>';
 					}
 					if (line.disburse_month_label || line.disburse_month) {
 						html += '<div class="pm-bdext-info-card"><div class="pm-bdext-info-label">เดือนเบิกจ่าย</div><div class="pm-bdext-info-value">' + escHtml(line.disburse_month_label || line.disburse_month) + '</div></div>';
@@ -27141,6 +27400,7 @@ if ($op === 'add_project') {
 				});
 			})();
 
+			<?php if (!empty($pm_can_fill_project_results)): ?>
 			(function initBudgetOtherActions(){
                 $(window).on('pageshow.pmLoan focus.pmLoan', function(){
                     if ($('.pm-budget-other-actions-wrap').length) loadBudgetTable();
@@ -29493,7 +29753,7 @@ if ($op === 'add_project') {
 								</tr>
 								<tr>
 									<th>แหล่งงบประมาณ</th>
-									<td id="pmAmBudgetSrcVal"><?= htmlspecialchars(($pm_am_budget_src ?? '') !== '' ? $pm_am_budget_src : '-', ENT_QUOTES, 'UTF-8') ?></td>
+									<td id="pmAmBudgetSrcVal" style="white-space:pre-line;line-height:1.45;"><?= function_exists('pm_budget_source_label_html') ? pm_budget_source_label_html((string)(($pm_am_budget_src ?? '') !== '' ? $pm_am_budget_src : '-')) : htmlspecialchars(($pm_am_budget_src ?? '') !== '' ? $pm_am_budget_src : '-', ENT_QUOTES, 'UTF-8') ?></td>
 								</tr>
 							</table>
 							<div class="pm-am-closing">จึงเรียนมาเพื่อโปรดพิจารณาอนุมัติ</div>
@@ -29568,6 +29828,39 @@ if ($op === 'add_project') {
 				img.style.display = 'none';
 			}
 		};
+
+		window.pmBudgetSrcNormalize = window.pmBudgetSrcNormalize || function(text){
+			var t = String(text == null ? '' : text).replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+			if (!t) return '-';
+			t = t.replace(/\.00(?=\s*บาท)/g, '');
+			var lines = [];
+			if (t.indexOf('\n') >= 0) {
+				t.split('\n').forEach(function(s){ s = String(s || '').trim(); if (s) lines.push(s); });
+			} else if (/\s*\/\s*/.test(t) && t.split(/\s*\/\s*/).filter(function(s){ return String(s||'').trim() !== ''; }).length > 1) {
+				t.split(/\s*\/\s*/).forEach(function(s){ s = String(s || '').trim(); if (s) lines.push(s); });
+			} else {
+				return t;
+			}
+			if (lines.length <= 1) return lines[0] || t;
+			return lines.map(function(s){ return (String(s).indexOf('- ') === 0) ? s : ('- ' + String(s).replace(/^[- \t]+/, '')); }).join('\n');
+		};
+		window.pmBudgetSrcHtml = window.pmBudgetSrcHtml || function(text){
+			return $('<div/>').text(window.pmBudgetSrcNormalize(text)).html().replace(/\n/g, '<br>');
+		};
+		window.pmBudgetSrcSet = window.pmBudgetSrcSet || function(sel, text){
+			var $el = (sel && sel.jquery) ? sel : $(sel);
+			if (!$el.length) return;
+			$el.css('white-space', 'pre-line').css('line-height', '1.45').html(window.pmBudgetSrcHtml(text));
+		};
+		window.pmBudgetSrcRead = window.pmBudgetSrcRead || function(sel, fallback){
+			var $el = $(sel);
+			if (!$el.length) return fallback || '';
+			if ($el.is('input,textarea,select')) return window.pmBudgetSrcNormalize(String($el.val() || '').trim() || (fallback || ''));
+			var $c = $el.clone();
+			$c.find('br').replaceWith('\n');
+			return window.pmBudgetSrcNormalize(String($c.text() || '').trim() || (fallback || ''));
+		};
+
 		function pmAmDocNoText(){
 			var el = document.getElementById('pmAmDocNo');
 			if (!el) return '';
@@ -29663,7 +29956,7 @@ if ($op === 'add_project') {
 				var id = String(cell.id || '');
 				var label = String((cell.previousElementSibling && cell.previousElementSibling.textContent) || '');
 				if (id.indexOf('BudgetSrc') !== -1 || label.indexOf('แหล่งงบประมาณ') !== -1) {
-					wrap.textContent = String(wrap.textContent || '').replace(/\s*\/\s*/g, ' / ');
+					wrap.style.whiteSpace = 'pre-line'; wrap.innerHTML = (window.pmBudgetSrcHtml ? window.pmBudgetSrcHtml(wrap.textContent || '') : String(wrap.textContent || '').replace(/\n/g,'<br>'));
 				}
 				cell.appendChild(wrap);
 			});
@@ -29839,7 +30132,7 @@ if ($op === 'add_project') {
 					code: valText('#pmAmCodeVal'),
 					name: valText('#pmAmNameVal'),
 					budget: valText('#pmAmBudgetVal'),
-					budget_src: valText('#pmAmBudgetSrcVal'),
+					budget_src: (window.pmBudgetSrcRead ? pmBudgetSrcRead('#pmAmBudgetSrcVal', '-') : valText('#pmAmBudgetSrcVal')),
 					proposer_name: valText('#pmAmProposerName'),
 					proposer_pos: 'หัวหน้าโครงการ',
 					proposer_date: '',
@@ -29966,7 +30259,7 @@ if ($op === 'add_project') {
 
 						<div class="pm-am-body">
 							<div class="pm-am-to"><span class="pm-am-to-label">เรียน</span><span>คณบดีคณะเภสัชศาสตร์</span></div>
-							<div class="pm-am-para">ด้วย <span id="pmChgAmUnitInline">หน่วยงาน</span> ได้รับอนุมัติให้ดำเนินการโครงการ <span id="pmChgAmNameInline">…</span> ประจำปีงบประมาณ พ.ศ. <span id="pmChgAmYearVal">…</span> รหัสโครงการ <span id="pmChgAmCodeVal">-</span> แหล่งงบประมาณ <span id="pmChgAmBudgetSrcVal">-</span> วงเงินงบประมาณ <span id="pmChgAmBudgetVal">0</span> บาท</div>
+							<div class="pm-am-para">ด้วย <span id="pmChgAmUnitInline">หน่วยงาน</span> ได้รับอนุมัติให้ดำเนินการโครงการ <span id="pmChgAmNameInline">…</span> ประจำปีงบประมาณ พ.ศ. <span id="pmChgAmYearVal">…</span> รหัสโครงการ <span id="pmChgAmCodeVal">-</span> แหล่งงบประมาณ <span id="pmChgAmBudgetSrcVal" style="white-space:pre-line;line-height:1.45;display:inline-block;vertical-align:top;">-</span> วงเงินงบประมาณ <span id="pmChgAmBudgetVal">0</span> บาท</div>
 							<div class="pm-am-para">ในการนี้ <span id="pmChgAmUnitInline2">หน่วยงาน</span> มีความประสงค์ขอเปลี่ยนแปลงรายละเอียดของโครงการ เนื่องจาก <span id="pmChgAmReasonVal">…</span></div>
 							<table class="pm-am-table pm-am-table-cmp">
 								<thead>
@@ -30110,7 +30403,7 @@ if ($op === 'add_project') {
 			pmChgSetText('pmChgAmNameInline', data.name, '…');
 			pmChgSetText('pmChgAmYearVal', data.year, '…');
 			pmChgSetText('pmChgAmCodeVal', data.code, '-');
-			pmChgSetText('pmChgAmBudgetSrcVal', data.budget_src, '-');
+			pmBudgetSrcSet('#pmChgAmBudgetSrcVal', data.budget_src || '-');
 			pmChgSetText('pmChgAmBudgetVal', data.budget, '0');
 			pmChgSetText('pmChgAmReasonVal', data.reason, '…');
 			pmChgSetText('pmChgAmProposerName', data.proposer_name, '........................');
@@ -30320,7 +30613,7 @@ if ($op === 'add_project') {
 				name: valText('#pmChgAmNameInline'),
 				year: valText('#pmChgAmYearVal'),
 				budget: valText('#pmChgAmBudgetVal'),
-				budget_src: valText('#pmChgAmBudgetSrcVal'),
+				budget_src: (window.pmBudgetSrcRead ? pmBudgetSrcRead('#pmChgAmBudgetSrcVal', '-') : valText('#pmChgAmBudgetSrcVal')),
 				reason: valText('#pmChgAmReasonVal'),
 				details_json: JSON.stringify(details),
 				proposer_name: valText('#pmChgAmProposerName'),
@@ -30833,7 +31126,7 @@ if ($op === 'add_project') {
 							<div class="k">รหัส</div>
 							<div class="v" id="pmChgCode2">-</div>
 							<div class="k">แหล่งงบประมาณ</div>
-							<div class="v" id="pmChgBudgetSrc"><?= htmlspecialchars(($pm_chg_budget_src ?? '') !== '' ? $pm_chg_budget_src : '-', ENT_QUOTES, 'UTF-8') ?></div>
+							<div class="v" id="pmChgBudgetSrc" style="white-space:pre-line;line-height:1.45;"><?= function_exists('pm_budget_source_label_html') ? pm_budget_source_label_html((string)(($pm_chg_budget_src ?? '') !== '' ? $pm_chg_budget_src : '-')) : htmlspecialchars(($pm_chg_budget_src ?? '') !== '' ? $pm_chg_budget_src : '-', ENT_QUOTES, 'UTF-8') ?></div>
 							<div class="k">งบประมาณ</div>
 							<div class="v"><span id="pmChgBudget2">0</span> บาท</div>
 						</div>
@@ -31226,7 +31519,7 @@ if ($op === 'add_project') {
 			$('#pmChgProjectId').val(String(pid));
 			$('#pmChgName, #pmChgName2').text($btn.attr('data-name') || '-');
 			$('#pmChgCode, #pmChgCode2').text($btn.attr('data-code') || '-');
-			$('#pmChgBudgetSrc').text($btn.attr('data-budget-src') || $btn.data('budgetSrc') || '-');
+			pmBudgetSrcSet('#pmChgBudgetSrc', $btn.attr('data-budget-src') || $btn.data('budgetSrc') || '-');
 			$('#pmChgBudget, #pmChgBudget2').text($btn.attr('data-budget') || '0');
 			pmChgReset();
 			pmChgShow();
@@ -31325,7 +31618,7 @@ if ($op === 'add_project') {
 							<div class="k">รหัส</div>
 							<div class="v" id="pmCanCode">-</div>
 							<div class="k">แหล่งงบประมาณ</div>
-							<div class="v" id="pmCanBudgetSrc">-</div>
+							<div class="v" id="pmCanBudgetSrc" style="white-space:pre-line;line-height:1.45;">-</div>
 							<div class="k">งบประมาณ</div>
 							<div class="v"><span id="pmCanBudget">0</span> บาท</div>
 						</div>
@@ -31509,7 +31802,7 @@ if ($op === 'add_project') {
 			$('#pmCanProjectId').val(String(pid));
 			$('#pmCanName, #pmCanName2').text($btn.attr('data-name') || '-');
 			$('#pmCanCode').text($btn.attr('data-code') || '-');
-			$('#pmCanBudgetSrc').text($btn.attr('data-budget-src') || '-');
+			pmBudgetSrcSet('#pmCanBudgetSrc', $btn.attr('data-budget-src') || '-');
 			$('#pmCanBudget').text($btn.attr('data-budget') || '0');
 			$('#pmCanFiles').val('');
 			pmCanSavedFiles = [];
@@ -31554,8 +31847,151 @@ if ($op === 'add_project') {
 	</script>
 	<?php endif ?>
 	<?php if (!empty($pm_is_plan_admin) && !empty($pm_change_history)): ?>
+	<style>
+		.pm-chg-hist-edit .pm-chg-edit-table textarea{
+			width:100%;
+			min-height:4.5rem;
+			resize:vertical;
+			font-size:.86rem;
+		}
+		.pm-chg-hist-edit .pm-chg-edit-table td{
+			vertical-align:top;
+		}
+	</style>
 	<script>
 	(function($){
+		function pmChgCollectDetails($wrap){
+			var rows = [];
+			$wrap.find('tbody tr').each(function(){
+				var orig = String($(this).find('.pm-chg-edit-original').val() || '').trim();
+				var chg = String($(this).find('.pm-chg-edit-changed').val() || '').trim();
+				if (!orig && !chg) return;
+				rows.push({ original: orig, changed: chg });
+			});
+			return rows;
+		}
+		function pmChgEnsureOneRow($wrap){
+			if ($wrap.find('tbody tr').length) return;
+			$wrap.find('tbody').append(
+				'<tr>'+
+					'<td><textarea class="form-control form-control-sm pm-chg-edit-original" rows="3" placeholder="รายละเอียดเดิม"></textarea></td>'+
+					'<td><textarea class="form-control form-control-sm pm-chg-edit-changed" rows="3" placeholder="รายละเอียดการเปลี่ยนแปลง"></textarea></td>'+
+					'<td class="text-center align-middle"><button type="button" class="btn btn-sm btn-outline-danger pm-chg-edit-del-row" title="ลบแถว"><i class="fa fa-trash"></i></button></td>'+
+				'</tr>'
+			);
+		}
+		function pmChgSetEditMode($content, on){
+			var $view = $content.find('.pm-chg-hist-view');
+			var $edit = $content.find('.pm-chg-hist-edit');
+			if (on) {
+				$view.addClass('d-none');
+				$edit.removeClass('d-none');
+			} else {
+				$edit.addClass('d-none');
+				$view.removeClass('d-none');
+			}
+		}
+		function pmChgEscapeHtml(s){
+			return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+		}
+		function pmChgNl2br(s){
+			return pmChgEscapeHtml(s).replace(/\r\n|\r|\n/g, '<br>');
+		}
+		function pmChgRefreshView($content, reason, details){
+			var $view = $content.find('.pm-chg-hist-view');
+			var html = '';
+			html += '<div class="d-flex justify-content-end mb-2">'
+				+ '<button type="button" class="btn btn-sm btn-pm-edit-orange pm-chg-edit-open"><i class="fa fa-edit mr-1"></i> แก้ไข</button>'
+				+ '</div>';
+			if (reason) {
+				html += '<div class="pm-chg-view-reason" style="font-size:.88rem;color:#44403c;"><span style="font-weight:800;color:#9a3412;">เหตุผล :</span> ' + pmChgNl2br(reason) + '</div>';
+			}
+			if (details && details.length) {
+				html += '<table class="table table-sm table-bordered pm-chg-hist-pairs mb-1 pm-chg-view-table"><thead><tr><th>รายละเอียดเดิม</th><th>รายละเอียดการเปลี่ยนแปลง</th></tr></thead><tbody>';
+				details.forEach(function(row){
+					html += '<tr><td>' + pmChgNl2br(row.original || '') + '</td><td>' + pmChgNl2br(row.changed || '') + '</td></tr>';
+				});
+				html += '</tbody></table>';
+			}
+			$view.html(html);
+		}
+		$(document).on('click', '.pm-chg-edit-open', function(){
+			pmChgSetEditMode($(this).closest('.pm-chg-hist-content'), true);
+		});
+		$(document).on('click', '.pm-chg-edit-cancel', function(){
+			pmChgSetEditMode($(this).closest('.pm-chg-hist-content'), false);
+		});
+		$(document).on('click', '.pm-chg-edit-add-row', function(){
+			var $wrap = $(this).closest('.pm-chg-hist-edit');
+			$wrap.find('tbody').append(
+				'<tr>'+
+					'<td><textarea class="form-control form-control-sm pm-chg-edit-original" rows="3" placeholder="รายละเอียดเดิม"></textarea></td>'+
+					'<td><textarea class="form-control form-control-sm pm-chg-edit-changed" rows="3" placeholder="รายละเอียดการเปลี่ยนแปลง"></textarea></td>'+
+					'<td class="text-center align-middle"><button type="button" class="btn btn-sm btn-outline-danger pm-chg-edit-del-row" title="ลบแถว"><i class="fa fa-trash"></i></button></td>'+
+				'</tr>'
+			);
+		});
+		$(document).on('click', '.pm-chg-edit-del-row', function(){
+			var $wrap = $(this).closest('.pm-chg-hist-edit');
+			$(this).closest('tr').remove();
+			pmChgEnsureOneRow($wrap);
+		});
+		$(document).on('click', '.pm-chg-edit-save', function(){
+			var $btn = $(this);
+			var $wrap = $btn.closest('.pm-chg-hist-edit');
+			var $content = $btn.closest('.pm-chg-hist-content');
+			var rid = parseInt($btn.attr('data-request-id') || $wrap.attr('data-request-id') || '0', 10);
+			var reason = String($wrap.find('.pm-chg-edit-reason').val() || '').trim();
+			var details = pmChgCollectDetails($wrap);
+			if (!rid) return;
+			if (!reason) {
+				if (typeof Swal !== 'undefined') Swal.fire({ icon:'warning', title:'กรุณากรอกเหตุผล' });
+				else alert('กรุณากรอกเหตุผล');
+				return;
+			}
+			if (!details.length) {
+				if (typeof Swal !== 'undefined') Swal.fire({ icon:'warning', title:'กรุณาระบุรายละเอียดอย่างน้อย 1 รายการ' });
+				else alert('กรุณาระบุรายละเอียดอย่างน้อย 1 รายการ');
+				return;
+			}
+			for (var i = 0; i < details.length; i++) {
+				if (!details[i].original || !details[i].changed) {
+					if (typeof Swal !== 'undefined') Swal.fire({ icon:'warning', title:'กรุณากรอกรายละเอียดเดิมและรายละเอียดการเปลี่ยนแปลงให้ครบทุกแถว' });
+					else alert('กรุณากรอกรายละเอียดเดิมและรายละเอียดการเปลี่ยนแปลงให้ครบทุกแถว');
+					return;
+				}
+			}
+			$btn.prop('disabled', true);
+			$.ajax({
+				url: '?page=project_manage&op=plan_admin_update_change_content_ajax',
+				type: 'POST',
+				dataType: 'json',
+				data: {
+					op: 'plan_admin_update_change_content_ajax',
+					change_request_id: rid,
+					reason: reason,
+					details_json: JSON.stringify(details)
+				}
+			}).done(function(res){
+				if (res && Number(res.ok) === 1) {
+					var savedDetails = (res.details && Array.isArray(res.details)) ? res.details : details;
+					pmChgRefreshView($content, reason, savedDetails);
+					pmChgSetEditMode($content, false);
+					if (typeof Swal !== 'undefined') {
+						Swal.fire({ icon:'success', title: (res.msg || 'บันทึกแล้ว'), timer: 1400, showConfirmButton:false });
+					} else {
+						alert(res.msg || 'บันทึกแล้ว');
+					}
+					return;
+				}
+				var err = (res && res.msg) ? res.msg : 'บันทึกไม่สำเร็จ';
+				if (typeof Swal !== 'undefined') Swal.fire({ icon:'error', title: err });
+				else alert(err);
+			}).fail(function(){
+				if (typeof Swal !== 'undefined') Swal.fire({ icon:'error', title:'เชื่อมต่อไม่สำเร็จ' });
+				else alert('เชื่อมต่อไม่สำเร็จ');
+			}).always(function(){ $btn.prop('disabled', false); });
+		});
 		$(document).on('click', '.pm-chg-apply-btn', function(){
 			var $btn = $(this);
 			var rid = parseInt($btn.attr('data-request-id') || '0', 10);
@@ -31685,7 +32121,7 @@ if ($op === 'add_project') {
 							<div class="k">งบประมาณ</div>
 							<div class="v"><span id="pmRoMemoTblBudget">0</span> บาท</div>
 							<div class="k">แหล่งงบประมาณ</div>
-							<div class="v" id="pmRoMemoTblBudgetSrc">-</div>
+							<div class="v" id="pmRoMemoTblBudgetSrc" style="white-space:pre-line;line-height:1.45;">-</div>
 						</div>
 						<div class="pm-ro-certifiers-wrap">
 							<div class="pm-ro-certifiers-box">
@@ -31898,7 +32334,7 @@ if ($op === 'add_project') {
 			$('#pmRoMemoTblCode2').text(code);
 			$('#pmRoMemoTblName2').text(name);
 			$('#pmRoMemoTblBudget').text($btn.attr('data-memo-budget') || '0');
-			$('#pmRoMemoTblBudgetSrc').text($btn.attr('data-memo-budget-src') || '-');
+			pmBudgetSrcSet('#pmRoMemoTblBudgetSrc', $btn.attr('data-memo-budget-src') || '-');
 			pmRoResetCertRows();
 		}
 		$(document).on('click', '#btnPmRoCertAdd', function(){ pmRoAddCertRow(); });
@@ -34409,7 +34845,7 @@ if ($is_unit_admin) {
 						<div class="k">งบประมาณ</div>
 						<div class="v"><span id="pmRoMemoTblBudget">0</span> บาท</div>
 						<div class="k">แหล่งงบประมาณ</div>
-						<div class="v" id="pmRoMemoTblBudgetSrc">-</div>
+						<div class="v" id="pmRoMemoTblBudgetSrc" style="white-space:pre-line;line-height:1.45;">-</div>
 					</div>
 					<div class="pm-ro-certifiers-wrap">
 						<div class="pm-ro-certifiers-box">
@@ -34928,7 +35364,7 @@ if ($is_unit_admin) {
 		$('#pmRoMemoTblCode2').text(code);
 		$('#pmRoMemoTblName2').text(name);
 		$('#pmRoMemoTblBudget').text($btn.attr('data-memo-budget') || '0');
-		$('#pmRoMemoTblBudgetSrc').text($btn.attr('data-memo-budget-src') || '-');
+		pmBudgetSrcSet('#pmRoMemoTblBudgetSrc', $btn.attr('data-memo-budget-src') || '-');
 		pmRoResetCertRows();
 	}
 	$(document).on('click', '#btnPmRoCertAdd', function(){ pmRoAddCertRow(); });
