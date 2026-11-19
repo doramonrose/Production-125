@@ -5954,7 +5954,17 @@ if ($op === 'save_data_kpi_project_ajax') {
 		exit;
 	}
 
-	$kpi_weight = $toDec($_POST['kpi_weight'] ?? 0);
+	$kpi_weight_raw = trim((string)($_POST['kpi_weight'] ?? ''));
+	if ($kpi_weight_raw === '' || !is_numeric($kpi_weight_raw)) {
+		echo json_encode(['ok' => 0, 'msg' => 'กรุณากรอกค่าน้ำหนักเป็นจำนวนเต็ม 0-100'], JSON_UNESCAPED_UNICODE);
+		exit;
+	}
+	$kpi_weight_f = (float)$kpi_weight_raw;
+	if ($kpi_weight_f < 0 || $kpi_weight_f > 100 || abs($kpi_weight_f - round($kpi_weight_f)) > 0.0000001) {
+		echo json_encode(['ok' => 0, 'msg' => 'ค่าน้ำหนักต้องเป็นจำนวนเต็ม 0-100'], JSON_UNESCAPED_UNICODE);
+		exit;
+	}
+	$kpi_weight = (int)round($kpi_weight_f);
 	$mon = [];
 	for ($i = 1; $i <= 12; $i++) {
 		$key = sprintf('mon_%02d', $i);
@@ -9869,12 +9879,17 @@ if ($op === 'plan_admin_set_budget_source_ajax') {
 		$project_id = isset($_POST['project_id']) ? (int)$_POST['project_id'] : 0;
 		$budget_code = trim((string)($_POST['budget_code'] ?? ''));
 		$budget_other = trim((string)($_POST['budget_other'] ?? ''));
+		$show_on_leave_system = (isset($_POST['show_on_leave_system']) && (string)$_POST['show_on_leave_system'] === '1') ? 1 : 0;
+		$has_show_on_leave_post = array_key_exists('show_on_leave_system', $_POST);
 		if ($project_id <= 0 || $budget_code === '') {
 			echo json_encode(['ok' => 0, 'msg' => 'กรุณาเลือกแหล่งงบประมาณ'], JSON_UNESCAPED_UNICODE);
 			exit;
 		}
 		if (function_exists('pm_exit_if_project_plan_closed')) {
 			pm_exit_if_project_plan_closed($db_Project, $project_id);
+		}
+		if (function_exists('pm_ensure_show_on_leave_system_schema')) {
+			pm_ensure_show_on_leave_system_schema($db_Project);
 		}
 		$sess_email = $_SESSION['r_email'] ?? '';
 		$sess_code = $_SESSION['code'] ?? '';
@@ -10020,6 +10035,9 @@ if ($op === 'plan_admin_set_budget_source_ajax') {
 			if (isset($preCols['budget_other'])) {
 				$preSets[] = "budget_other='" . $escOther . "'";
 			}
+			if ($has_show_on_leave_post && isset($preCols['show_on_leave_system'])) {
+				$preSets[] = "show_on_leave_system='" . (int)$show_on_leave_system . "'";
+			}
 			if ($preSets) {
 				$preSets[] = 'dates=NOW()';
 				$okPre = @mysqli_query(
@@ -10081,6 +10099,7 @@ if ($op === 'plan_admin_set_budget_source_ajax') {
 				'budget_code' => (string)$first['code'],
 				'budget_other' => (string)$first['other'],
 				'sources' => $cleanSources,
+				'show_on_leave_system' => $has_show_on_leave_post ? (int)$show_on_leave_system : null,
 			], JSON_UNESCAPED_UNICODE));
 			@mysqli_query(
 				$db_Project,
@@ -10096,7 +10115,11 @@ if ($op === 'plan_admin_set_budget_source_ajax') {
 					? pm_format_budget_source_label($db_Project, (string)$first['code'], (string)$first['other'])
 					: (string)$first['other'];
 			}
-			echo json_encode(['ok' => 1, 'label' => $label], JSON_UNESCAPED_UNICODE);
+			echo json_encode([
+				'ok' => 1,
+				'label' => $label,
+				'show_on_leave_system' => $has_show_on_leave_post ? (int)$show_on_leave_system : null,
+			], JSON_UNESCAPED_UNICODE);
 			exit;
 		}
 		$known = false;
@@ -10152,6 +10175,9 @@ if ($op === 'plan_admin_set_budget_source_ajax') {
 		if (isset($preCols['budget_other'])) {
 			$preSets[] = "budget_other='" . $escOther . "'";
 		}
+		if ($has_show_on_leave_post && isset($preCols['show_on_leave_system'])) {
+			$preSets[] = "show_on_leave_system='" . (int)$show_on_leave_system . "'";
+		}
 		if ($preSets) {
 			$preSets[] = 'dates=NOW()';
 			$okPre = @mysqli_query(
@@ -10204,6 +10230,7 @@ if ($op === 'plan_admin_set_budget_source_ajax') {
 		$metaEsc = mysqli_real_escape_string($db_Project, json_encode([
 			'budget_code' => $budget_code,
 			'budget_other' => $budget_other,
+			'show_on_leave_system' => $has_show_on_leave_post ? (int)$show_on_leave_system : null,
 		], JSON_UNESCAPED_UNICODE));
 		@mysqli_query(
 			$db_Project,
@@ -10214,7 +10241,11 @@ if ($op === 'plan_admin_set_budget_source_ajax') {
 		$label = function_exists('pm_format_budget_source_label')
 			? pm_format_budget_source_label($db_Project, $budget_code, $budget_other)
 			: ($budget_other !== '' ? $budget_other : $budget_code);
-		echo json_encode(['ok' => 1, 'label' => $label], JSON_UNESCAPED_UNICODE);
+		echo json_encode([
+			'ok' => 1,
+			'label' => $label,
+			'show_on_leave_system' => $has_show_on_leave_post ? (int)$show_on_leave_system : null,
+		], JSON_UNESCAPED_UNICODE);
 		exit;
 	} catch (Throwable $e) {
 		if (isset($db_Project) && $db_Project instanceof mysqli) {
@@ -10226,7 +10257,7 @@ if ($op === 'plan_admin_set_budget_source_ajax') {
 }
 
 if (!function_exists('pm_render_plan_budget_source_editor')) {
-	function pm_render_plan_budget_source_editor(int $projectId, string $code, string $other, array $opts, string $projectYear = ''): void
+	function pm_render_plan_budget_source_editor(int $projectId, string $code, string $other, array $opts, string $projectYear = '', bool $showOnLeave = false): void
 	{
 		global $db_Project;
 		$optsJson = json_encode(array_values($opts), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
@@ -10238,6 +10269,14 @@ if (!function_exists('pm_render_plan_budget_source_editor')) {
 			<button type="button" class="btn btn-sm btn-outline-primary font-weight-bold" id="btnPmPaBudgetEdit">
 				<i class="fa fa-edit mr-1"></i>แก้ไขแหล่งงบประมาณ
 			</button>
+			<div class="pm-pa-leave-status mt-2" id="pmPaLeaveStatusView">
+				<span class="small font-weight-bold text-muted">ระบบลาราชการ :</span>
+				<?php if (!empty($showOnLeave)): ?>
+					<span class="pm-notify-result-badge ok"><i class="fa fa-check-square"></i> แสดงรายการที่ระบบลาราชการ</span>
+				<?php else: ?>
+					<span class="small text-muted">ไม่แสดง</span>
+				<?php endif; ?>
+			</div>
 			<div id="pmPaBudgetEditBox" class="d-none mt-2 p-2" style="background:#fff;border:1px solid #c4b5fd;border-radius:10px;max-width:760px;">
 				<div class="font-weight-bold mb-1">แหล่งงบประมาณ</div>
 				<label class="small font-weight-bold mb-1" for="pmPaBudgetYear">ปีงบประมาณ</label>
@@ -10251,11 +10290,36 @@ if (!function_exists('pm_render_plan_budget_source_editor')) {
 				</div>
 				<div id="pmPaBudgetChosen" class="mt-2"></div>
 				<div id="pmPaBudgetCapNote" class="small text-muted mt-1"></div>
+				<label class="pm-pa-leave-check mb-0 mt-2">
+					<input type="checkbox" id="pmPaShowLeave" value="1"<?= !empty($showOnLeave) ? ' checked' : '' ?>>
+					<span>
+						<span class="pm-pa-leave-check-text">แสดงรายการที่ระบบลาราชการ</span>
+						<span class="pm-pa-leave-check-hint">ติ๊กเพื่อให้โครงการนี้ไปแสดงต่อในระบบลาราชการ</span>
+					</span>
+				</label>
 				<div class="mt-2">
 					<button type="button" class="btn btn-sm btn-success font-weight-bold" id="btnPmPaBudgetSave">บันทึกแหล่งงบประมาณ</button>
 					<button type="button" class="btn btn-sm btn-outline-secondary" id="btnPmPaBudgetCancel">ยกเลิก</button>
 				</div>
 			</div>
+			<style>
+			.pm-pa-leave-check{
+				display:flex; align-items:flex-start; gap:.55rem;
+				padding:.7rem .85rem;
+				border:1px solid #e8def2; border-radius:.7rem; background:#f3eef8;
+			}
+			.pm-pa-leave-check input[type="checkbox"]{
+				width:1.15rem; height:1.15rem; margin-top:.12rem; flex:0 0 auto;
+				accent-color:#926cb8;
+			}
+			.pm-pa-leave-check-text{
+				font-weight:800; color:#4a3263; line-height:1.35; font-size:.95rem;
+			}
+			.pm-pa-leave-check-hint{
+				display:block; font-weight:600; color:#734d96; font-size:.78rem; margin-top:.15rem;
+			}
+			.pm-pa-leave-status{display:flex;align-items:center;flex-wrap:wrap;gap:.4rem .55rem;}
+			</style>
 		</div>
 		<script>
 		(function($){
@@ -10264,6 +10328,7 @@ if (!function_exists('pm_render_plan_budget_source_editor')) {
 			var projectId = <?= (int)$projectId ?>;
 			var currentCode = <?= json_encode($code, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 			var projectYear = <?= json_encode($projectYear, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+			var savedShowLeave = <?= !empty($showOnLeave) ? 'true' : 'false' ?>;
 			var savedSources = <?= json_encode((function_exists('pm_project_budget_source_rows') ? pm_project_budget_source_rows($db_Project ?? null, (int)$projectId) : []), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 			var budgetCaps = <?= json_encode((function_exists('pm_project_budget_amount_caps') ? pm_project_budget_amount_caps($db_Project ?? null, (int)$projectId) : ['approved' => null, 'expense' => 0]), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 			var opts = <?= $optsJson ?>;
@@ -10382,6 +10447,7 @@ if (!function_exists('pm_render_plan_budget_source_editor')) {
 			}
 			$(document).on('click', '#btnPmPaBudgetEdit', function(){
 				$('#pmPaBudgetEditBox').removeClass('d-none');
+				$('#pmPaShowLeave').prop('checked', !!savedShowLeave);
 				fillYears();
 				fillSelect();
 				seedChosen();
@@ -10442,6 +10508,7 @@ if (!function_exists('pm_render_plan_budget_source_editor')) {
 				var payloadSources = chosen.map(function(it){
 					return {code: it.code, other: it.code === '99' ? it.other : '', amount: it.amount};
 				});
+				var showLeave = $('#pmPaShowLeave').is(':checked') ? 1 : 0;
 				var $btn = $(this).prop('disabled', true);
 				$.ajax({
 					url: '?page=project_manage',
@@ -10452,7 +10519,8 @@ if (!function_exists('pm_render_plan_budget_source_editor')) {
 						project_id: projectId,
 						sources_json: JSON.stringify(payloadSources),
 						budget_code: payloadSources[0].code,
-						budget_other: payloadSources[0].other
+						budget_other: payloadSources[0].other,
+						show_on_leave_system: showLeave
 					}
 				}).done(function(raw){
 					var res = null;
@@ -15161,6 +15229,7 @@ if ($op === 'add_project') {
 		}
 		.pm-chg-hist-round-head{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .7rem;margin-bottom:.45rem;}
 		.pm-chg-hist-round-n{font-weight:900;color:#9a3412;}
+		.pm-chg-hist-status-k{font-size:.86rem;font-weight:800;color:#9a3412;}
 		.pm-chg-hist-pairs{width:100%;font-size:.86rem;margin:.4rem 0 .2rem;}
 		.pm-chg-hist-pairs th{background:#fff7ed;color:#9a3412;font-weight:800;text-align:center;}
 		.pm-chg-hist-apply{margin-top:.55rem;padding:.65rem .7rem;border-radius:.55rem;background:#f8fafc;border:1px dashed #cbd5e1;}
@@ -20341,7 +20410,8 @@ if ($op === 'add_project') {
 								(string)($pm_plan_budget_code ?? ''),
 								(string)($pm_plan_budget_other ?? ''),
 								is_array($pm_plan_budget_opts ?? null) ? $pm_plan_budget_opts : [],
-								(string)($years_select ?? '')
+								(string)($years_select ?? ''),
+								!empty($pm_show_on_leave_system)
 							);
 						?>
 					<?php endif; ?>
@@ -21182,7 +21252,14 @@ if ($op === 'add_project') {
 						<div class="small text-muted mt-2">แหล่งงบ: <strong class="text-dark" style="white-space:pre-line;line-height:1.45;display:inline-block;"><?= function_exists('pm_budget_source_label_html') ? pm_budget_source_label_html((string)(($pm_pa_memo_budget_src !== '' && $pm_pa_memo_budget_src !== '-') ? $pm_pa_memo_budget_src : 'ยังไม่ได้เลือก')) : htmlspecialchars(($pm_pa_memo_budget_src !== '' && $pm_pa_memo_budget_src !== '-') ? $pm_pa_memo_budget_src : 'ยังไม่ได้เลือก', ENT_QUOTES, 'UTF-8') ?></strong></div>
 						<?php
 							$pm_plan_budget_editor_rendered = true;
-							pm_render_plan_budget_source_editor((int)$edit_project_id, (string)($pm_plan_budget_code ?? ''), (string)($pm_plan_budget_other ?? ''), is_array($pm_plan_budget_opts ?? null) ? $pm_plan_budget_opts : [], (string)($years_select ?? ''));
+							pm_render_plan_budget_source_editor(
+								(int)$edit_project_id,
+								(string)($pm_plan_budget_code ?? ''),
+								(string)($pm_plan_budget_other ?? ''),
+								is_array($pm_plan_budget_opts ?? null) ? $pm_plan_budget_opts : [],
+								(string)($years_select ?? ''),
+								!empty($pm_show_on_leave_system)
+							);
 						?>
 					<?php endif; ?>
 					<?php if (!empty($pm_approver_rows) && empty($pm_is_legacy_operate_approver)): ?>
@@ -21274,26 +21351,12 @@ if ($op === 'add_project') {
 					<?php foreach ($pm_change_history as $__chi => $__ch):
 						$__chSt = trim((string)($__ch['req_status'] ?? ''));
 						$__chApplied = trim((string)($__ch['applied_at'] ?? ''));
-						$__chBadge = 'warn';
-						$__chTxt = 'อยู่ระหว่างพิจารณา';
-						$__chIcon = 'fa-hourglass-half';
-						if ($__chSt === 'rejected') {
-							$__chBadge = 'no';
-							$__chTxt = 'ตีกลับ';
-							$__chIcon = 'fa-undo';
-						} elseif ($__chSt === 'approved' && $__chApplied !== '') {
-							$__chBadge = 'ok';
-							$__chTxt = 'แก้ไขแล้ว';
-							$__chIcon = 'fa-check-circle';
-						} elseif ($__chSt === 'approved') {
-							$__chBadge = 'warn';
-							$__chTxt = 'อนุมัติแล้ว รอหน่วยแผนแก้ไข';
-							$__chIcon = 'fa-edit';
-						} elseif ($__chSt === 'waiting_plan') {
-							$__chTxt = 'รอหน่วยแผนเลือกผู้อนุมัติ';
-						} elseif ($__chSt === 'pending_approve') {
-							$__chTxt = 'รออนุมัติ';
-						}
+						$__chMeta = function_exists('pm_change_request_status_meta')
+							? pm_change_request_status_meta($__chSt, $__chApplied)
+							: ['label' => 'อยู่ระหว่างพิจารณา', 'badge' => 'warn', 'icon' => 'fa-hourglass-half'];
+						$__chBadge = (string)($__chMeta['badge'] ?? 'warn');
+						$__chTxt = (string)($__chMeta['label'] ?? 'อยู่ระหว่างพิจารณา');
+						$__chIcon = (string)($__chMeta['icon'] ?? 'fa-hourglass-half');
 						$__chAt = function_exists('pm_change_thai_dt') ? pm_change_thai_dt($__ch['created_at'] ?? '') : (string)($__ch['created_at'] ?? '');
 						$__chApplyAt = function_exists('pm_change_thai_dt') ? pm_change_thai_dt($__chApplied) : $__chApplied;
 						$__chApplyName = '';
@@ -21304,10 +21367,16 @@ if ($op === 'add_project') {
 							$__chApplyName = trim((string)($rChN['n'] ?? ''));
 						}
 						$__chDetails = is_array($__ch['details'] ?? null) ? $__ch['details'] : [];
+						$__chReview = function_exists('pm_load_change_request_review_rows')
+							? pm_load_change_request_review_rows($db_Project, $db_person ?? null, is_array($__ch) ? $__ch : [])
+							: ['submitter_name' => '-', 'rows' => []];
+						$__chReviewRows = is_array($__chReview['rows'] ?? null) ? $__chReview['rows'] : [];
+						$__chSubmitter = trim((string)($__chReview['submitter_name'] ?? '-'));
 					?>
 					<div class="pm-chg-hist-round">
 						<div class="pm-chg-hist-round-head">
 							<span class="pm-chg-hist-round-n">รอบที่ <?= (int)$__chi + 1 ?></span>
+							<span class="pm-chg-hist-status-k">สถานะ :</span>
 							<span class="pm-notify-result-badge <?= htmlspecialchars($__chBadge, ENT_QUOTES, 'UTF-8') ?>">
 								<i class="fa <?= htmlspecialchars($__chIcon, ENT_QUOTES, 'UTF-8') ?>"></i>
 								<?= htmlspecialchars($__chTxt, ENT_QUOTES, 'UTF-8') ?>
@@ -21412,6 +21481,70 @@ if ($op === 'add_project') {
 								รอหน่วยแผนแก้ไขโครงการตามรายละเอียดที่ยื่นขอ
 							</div>
 						<?php endif; ?>
+						<details class="pm-review-timeline mt-3 pm-hist-fold pm-chg-review-fold" open>
+							<summary class="pm-review-timeline-title pm-hist-fold-sum">การขอเปลี่ยนแปลงโครงการ</summary>
+							<div class="mb-2">
+								<span class="pm-chg-hist-status-k">สถานะ :</span>
+								<span class="pm-notify-result-badge <?= htmlspecialchars($__chBadge, ENT_QUOTES, 'UTF-8') ?>">
+									<i class="fa <?= htmlspecialchars($__chIcon, ENT_QUOTES, 'UTF-8') ?>"></i>
+									<?= htmlspecialchars($__chTxt, ENT_QUOTES, 'UTF-8') ?>
+								</span>
+							</div>
+							<div class="pm-review-submitter">
+								<span class="pm-review-submitter-k">ผู้ยื่นเสนอ :</span>
+								<span class="pm-review-submitter-v"><?= htmlspecialchars($__chSubmitter !== '' ? $__chSubmitter : '-', ENT_QUOTES, 'UTF-8') ?></span>
+							</div>
+							<div class="pm-review-timeline-title">ลำดับการตรวจสอบ</div>
+							<?php if (empty($__chReviewRows)): ?>
+								<div class="text-muted py-1" style="font-size:.86rem;">ยังไม่มีลำดับผู้รับรองคำขอเปลี่ยนแปลง</div>
+							<?php else: ?>
+								<?php foreach ($__chReviewRows as $__crIdx => $__crRow): ?>
+									<?php
+										$__crSt = (string)($__crRow['status'] ?? '');
+										$__crBadgeTxt = 'รอลำดับก่อนหน้า';
+										$__crBadgeCls = 'pm-notify-result-badge warn';
+										if ($__crSt === 'approved') {
+											$__crBadgeTxt = 'ผ่าน';
+											$__crBadgeCls = 'pm-notify-result-badge ok';
+										} elseif ($__crSt === 'rejected') {
+											$__crBadgeTxt = 'ตีกลับเพื่อแก้ไข';
+											$__crBadgeCls = 'pm-notify-result-badge no';
+										} elseif ($__crSt === 'waiting_turn') {
+											$__crBadgeTxt = 'รอตรวจสอบ';
+										}
+										$__crNote = trim((string)($__crRow['note'] ?? ''));
+										$__crWhen = trim((string)($__crRow['decided_at_th'] ?? ''));
+									?>
+									<div class="pm-review-item">
+										<div class="pm-review-dot"><?= htmlspecialchars((string)($__crRow['sort_order'] ?? ($__crIdx + 1)), ENT_QUOTES, 'UTF-8') ?></div>
+										<div class="pm-review-content">
+											<div class="pm-review-head">
+												<span class="pm-review-label"><?= htmlspecialchars((string)($__crRow['staff_name'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></span>
+												<?php if (trim((string)($__crRow['position_title'] ?? '')) !== ''): ?>
+													<span class="pm-review-meta"><?= htmlspecialchars((string)$__crRow['position_title'], ENT_QUOTES, 'UTF-8') ?></span>
+												<?php endif; ?>
+											</div>
+											<div class="pm-review-status-row">
+												<span class="<?= htmlspecialchars($__crBadgeCls, ENT_QUOTES, 'UTF-8') ?>">
+													<?= htmlspecialchars($__crBadgeTxt, ENT_QUOTES, 'UTF-8') ?>
+												</span>
+												<?php if ($__crWhen !== ''): ?>
+													<span class="pm-review-when"><?= htmlspecialchars($__crWhen, ENT_QUOTES, 'UTF-8') ?></span>
+												<?php endif; ?>
+											</div>
+											<?php if ($__crNote !== ''): ?>
+												<div class="pm-review-note<?= $__crSt === 'rejected' ? ' pm-review-note-reject' : '' ?>">
+													<div class="pm-review-note-head">
+														<span class="pm-review-note-label"><i class="fa fa-comment-dots mr-1"></i>ข้อเสนอแนะ</span>
+													</div>
+													<div class="pm-review-note-body"><?= nl2br(htmlspecialchars($__crNote, ENT_QUOTES, 'UTF-8')) ?></div>
+												</div>
+											<?php endif; ?>
+										</div>
+									</div>
+								<?php endforeach; ?>
+							<?php endif; ?>
+						</details>
 					</div>
 					<?php endforeach; ?>
 				</div>
@@ -21554,7 +21687,14 @@ if ($op === 'add_project') {
 					<?php if (!empty($pm_plan_can_edit_budget_src) && empty($pm_plan_budget_editor_rendered) && function_exists('pm_render_plan_budget_source_editor')): ?>
 						<?php
 							$pm_plan_budget_editor_rendered = true;
-							pm_render_plan_budget_source_editor((int)$edit_project_id, (string)($pm_plan_budget_code ?? ''), (string)($pm_plan_budget_other ?? ''), is_array($pm_plan_budget_opts ?? null) ? $pm_plan_budget_opts : [], (string)($years_select ?? ''));
+							pm_render_plan_budget_source_editor(
+								(int)$edit_project_id,
+								(string)($pm_plan_budget_code ?? ''),
+								(string)($pm_plan_budget_other ?? ''),
+								is_array($pm_plan_budget_opts ?? null) ? $pm_plan_budget_opts : [],
+								(string)($years_select ?? ''),
+								!empty($pm_show_on_leave_system)
+							);
 						?>
 					<?php endif; ?>
 					<div class="pm-pa-approval-panel">
@@ -22199,15 +22339,6 @@ if ($op === 'add_project') {
 											<input type="hidden" name="code_unit" id="kpiProjectHiddenCodeUnit" value="0">
 										</div>
 									</div>
-									<div class="row mb-3">
-										<div class="col-md-4">
-											<label class="font-weight-bold">ค่าน้ำหนักของตัวชี้วัด <span class="text-danger">*</span></label>
-											<input type="number" name="kpi_weight" id="kpiProjectWeight" class="form-control" min="0" max="100" step="0.1" placeholder="ส่วนของตัวชี้วัด (รวมทุกตัว = 100)" required>
-										</div>
-										<div class="col-md-8 d-flex align-items-end">
-											<small class="text-muted">กรอก 0-100 เท่านั้น (ทศนิยมได้ 1 ตำแหน่ง)</small>
-										</div>
-									</div>
 									<div class="mb-2">
 										<label class="font-weight-bold mb-2 d-block">ค่าเป้าหมายตัวชี้วัด (รายเดือน)</label>
 										<div class="row g-2">
@@ -22259,6 +22390,15 @@ if ($op === 'add_project') {
 												<label class="form-label text-90 mb-0">ก.ย.</label>
 												<input type="number" class="form-control" name="mon_09" step="any" min="0">
 											</div>
+										</div>
+									</div>
+									<div class="row mb-0 mt-3">
+										<div class="col-md-4">
+											<label class="font-weight-bold">ค่าน้ำหนักของตัวชี้วัด <span class="text-danger">*</span></label>
+											<input type="number" name="kpi_weight" id="kpiProjectWeight" class="form-control" min="0" max="100" step="1" placeholder="ส่วนของตัวชี้วัด (รวมทุกตัว = 100)" required>
+										</div>
+										<div class="col-md-8 d-flex align-items-end">
+											<small class="text-muted">กรอก 0-100 เท่านั้น (จำนวนเต็ม)</small>
 										</div>
 									</div>
 								</div>
@@ -23591,6 +23731,19 @@ if ($op === 'add_project') {
 							$txtKpiUnit.trigger('focus');
 							return false;
 						}
+						var weightRaw = ($('#kpiProjectWeight').val() || '').toString().trim();
+						var weightNum = Number(weightRaw);
+						if (weightRaw === '' || !isFinite(weightNum) || weightNum < 0 || weightNum > 100 || Math.abs(weightNum - Math.round(weightNum)) > 0.0000001) {
+							e.preventDefault();
+							if (window.Swal && Swal.fire) {
+								Swal.fire({ icon: 'warning', title: 'ค่าน้ำหนักต้องเป็นจำนวนเต็ม 0-100', confirmButtonText: 'ตกลง' });
+							} else {
+								alert('ค่าน้ำหนักต้องเป็นจำนวนเต็ม 0-100');
+							}
+							$('#kpiProjectWeight').trigger('focus');
+							return false;
+						}
+						$('#kpiProjectWeight').val(String(Math.round(weightNum)));
 						e.preventDefault();
 						var actionUrl = $form.attr('action') || '';
 						var payload = $form.serialize();

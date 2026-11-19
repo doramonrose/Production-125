@@ -1865,7 +1865,8 @@ if (!function_exists('pm_load_project_change_requests')) {
 		$q = @mysqli_query(
 			$db_Project,
 			"SELECT id, project_id, reason, details_json, req_status, staff_insert, created_at,
-			        project_name, project_code, budget_source, budget_amount, approvers_json,
+			        project_name, project_code, budget_source, budget_amount,
+			        certifiers_json, approvers_json,
 			        applied_at, applied_by_staff_id, apply_note, plan_rechain_staff_id
 			 FROM project_change_request
 			 WHERE project_id='" . $pid . "' AND status='1'
@@ -1877,6 +1878,156 @@ if (!function_exists('pm_load_project_change_requests')) {
 			$out[] = $r;
 		}
 		return $out;
+	}
+}
+
+if (!function_exists('pm_change_request_status_meta')) {
+	/** @return array{label:string,badge:string,icon:string} */
+	function pm_change_request_status_meta(string $reqStatus, string $appliedAt = ''): array
+	{
+		$st = trim($reqStatus);
+		$applied = trim($appliedAt);
+		$label = 'อยู่ระหว่างพิจารณา';
+		$badge = 'warn';
+		$icon = 'fa-hourglass-half';
+		if ($st === 'rejected') {
+			$label = 'ตีกลับ';
+			$badge = 'no';
+			$icon = 'fa-undo';
+		} elseif ($st === 'approved' && $applied !== '') {
+			$label = 'แก้ไขแล้ว';
+			$badge = 'ok';
+			$icon = 'fa-check-circle';
+		} elseif ($st === 'approved') {
+			$label = 'อนุมัติแล้ว รอหน่วยแผนแก้ไข';
+			$badge = 'warn';
+			$icon = 'fa-edit';
+		} elseif ($st === 'waiting_plan') {
+			$label = 'รอหน่วยแผนเลือกผู้อนุมัติ';
+		} elseif ($st === 'pending_approve') {
+			$label = 'รออนุมัติ';
+		}
+		return ['label' => $label, 'badge' => $badge, 'icon' => $icon];
+	}
+}
+
+if (!function_exists('pm_load_change_request_review_rows')) {
+	/**
+	 * ลำดับผู้รับรอง/ผู้อนุมัติของคำขอเปลี่ยนแปลง (สำหรับแสดงบนหน้า manage)
+	 * @return array{submitter_name:string,rows:array<int,array<string,mixed>>}
+	 */
+	function pm_load_change_request_review_rows($db_Project, $db_person, array $changeReq): array
+	{
+		$empty = ['submitter_name' => '-', 'rows' => []];
+		if (!$db_Project || empty($changeReq)) {
+			return $empty;
+		}
+		$staffName = static function ($staffId) use ($db_person) {
+			$staffId = (int)$staffId;
+			if ($staffId <= 0 || !$db_person) {
+				return '-';
+			}
+			$q = @mysqli_query($db_person, "SELECT fname,lname FROM staff WHERE id='" . $staffId . "' LIMIT 1");
+			$r = $q ? mysqli_fetch_assoc($q) : null;
+			$nm = trim((string)(($r['fname'] ?? '') . ' ' . ($r['lname'] ?? '')));
+			return $nm !== '' ? $nm : ('Staff #' . $staffId);
+		};
+		$parseChain = static function ($json) {
+			$arr = json_decode((string)$json, true);
+			$list = [];
+			$seq = 0;
+			if (!is_array($arr)) {
+				return $list;
+			}
+			foreach ($arr as $c) {
+				if (!is_array($c)) {
+					continue;
+				}
+				$seq++;
+				$so = (int)($c['sort_order'] ?? 0);
+				if ($so <= 0) {
+					$so = $seq;
+				}
+				$sidC = (int)($c['staff_id'] ?? 0);
+				if ($sidC <= 0) {
+					continue;
+				}
+				$list[$so] = [
+					'staff_id' => $sidC,
+					'position_title' => trim((string)($c['position'] ?? $c['position_title'] ?? '')),
+				];
+			}
+			ksort($list, SORT_NUMERIC);
+			return $list;
+		};
+		$loadDec = static function ($db, $table, $rid) {
+			$map = [];
+			$q = @mysqli_query(
+				$db,
+				"SELECT sort_order, staff_id, decided_by_staff_id, decision, certifier_note, decided_at
+				 FROM `" . $table . "` WHERE request_id='" . (int)$rid . "'"
+			);
+			while ($q && ($rd = mysqli_fetch_assoc($q))) {
+				$so = (int)($rd['sort_order'] ?? 0);
+				if ($so > 0) {
+					$map[$so] = $rd;
+				}
+			}
+			return $map;
+		};
+		$reqId = (int)($changeReq['id'] ?? 0);
+		$reqStatus = trim((string)($changeReq['req_status'] ?? 'pending'));
+		$certList = $parseChain($changeReq['certifiers_json'] ?? '');
+		$apprList = $parseChain($changeReq['approvers_json'] ?? '');
+		$useApprover = ($reqStatus === 'pending_approve' || $reqStatus === 'approved') && !empty($apprList);
+		$activeList = $useApprover ? $apprList : $certList;
+		$decBySort = $loadDec(
+			$db_Project,
+			$useApprover ? 'project_change_approver_decision' : 'project_change_certifier_decision',
+			$reqId
+		);
+		$allSortOrders = array_keys($activeList);
+		sort($allSortOrders, SORT_NUMERIC);
+		$rows = [];
+		foreach ($allSortOrders as $so) {
+			$dec = (string)(($decBySort[$so]['decision'] ?? '') ?: '');
+			$decAt = (string)(($decBySort[$so]['decided_at'] ?? '') ?: '');
+			$decNote = (string)(($decBySort[$so]['certifier_note'] ?? '') ?: '');
+			$st = 'waiting_queue';
+			if ($dec === 'approved') {
+				$st = 'approved';
+			} elseif ($dec === 'rejected') {
+				$st = 'rejected';
+			} else {
+				$prevOk = true;
+				foreach ($allSortOrders as $pso) {
+					if ($pso >= $so) {
+						break;
+					}
+					if ((string)(($decBySort[$pso]['decision'] ?? '') ?: '') !== 'approved') {
+						$prevOk = false;
+						break;
+					}
+				}
+				$st = $prevOk ? 'waiting_turn' : 'waiting_queue';
+			}
+			$sidC = (int)($activeList[$so]['staff_id'] ?? 0);
+			$rows[] = [
+				'sort_order' => (int)$so,
+				'staff_id' => $sidC,
+				'staff_name' => $staffName($sidC),
+				'position_title' => (string)($activeList[$so]['position_title'] ?? ''),
+				'status' => $st,
+				'decision' => $dec,
+				'decided_at' => $decAt,
+				'decided_at_th' => function_exists('pm_change_thai_dt') ? pm_change_thai_dt($decAt) : $decAt,
+				'note' => $decNote,
+			];
+		}
+		return [
+			'submitter_name' => $staffName((int)($changeReq['staff_insert'] ?? 0)),
+			'rows' => $rows,
+		];
 	}
 }
 

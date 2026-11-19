@@ -2428,11 +2428,28 @@ if ($pm_appr_route_op === 'get_change_request_detail') {
 			$unit_name = trim((string)$rU['name']);
 		}
 	}
-	$request_status_out = 'pending';
-	if ($reqStatus === 'approved') {
-		$request_status_out = 'approved';
-	} elseif ($reqStatus === 'rejected') {
-		$request_status_out = 'rejected';
+	$appliedAt = trim((string)($req['applied_at'] ?? ''));
+	$request_status_out = $reqStatus !== '' ? $reqStatus : 'pending';
+	$request_status_label = 'อยู่ระหว่างพิจารณา';
+	$request_status_badge = 'warn';
+	if ($request_status_out === 'rejected') {
+		$request_status_label = 'ตีกลับ';
+		$request_status_badge = 'no';
+	} elseif ($request_status_out === 'approved' && $appliedAt !== '') {
+		$request_status_label = 'แก้ไขแล้ว';
+		$request_status_badge = 'ok';
+	} elseif ($request_status_out === 'approved') {
+		$request_status_label = 'อนุมัติแล้ว รอหน่วยแผนแก้ไข';
+		$request_status_badge = 'warn';
+	} elseif ($request_status_out === 'waiting_plan') {
+		$request_status_label = 'รอหน่วยแผนเลือกผู้อนุมัติ';
+		$request_status_badge = 'warn';
+	} elseif ($request_status_out === 'pending_approve') {
+		$request_status_label = 'รออนุมัติ';
+		$request_status_badge = 'warn';
+	} elseif ($request_status_out === 'pending') {
+		$request_status_label = 'อยู่ระหว่างพิจารณา';
+		$request_status_badge = 'warn';
 	}
 	echo json_encode([
 		'ok' => 1,
@@ -2446,6 +2463,10 @@ if ($pm_appr_route_op === 'get_change_request_detail') {
 		'request' => [
 			'id' => (int)$request_id,
 			'status' => $request_status_out,
+			'req_status' => $request_status_out,
+			'status_label' => $request_status_label,
+			'status_badge' => $request_status_badge,
+			'applied_at' => $appliedAt,
 			'budget_year' => (string)($proj['year_project'] ?? $years_select),
 			'created_at' => (string)($req['created_at'] ?? ''),
 			'subject' => 'ขอเปลี่ยนแปลงโครงการ ' . (string)($req['project_name'] ?? ''),
@@ -8223,6 +8244,10 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 							<i class="fa fa-chevron-down md-seq-head-chevron" id="mdSeqHeadChevron" style="display:none;"></i>
 						</div>
 						<div class="md-seq-body" id="mdSeqBody">
+							<div class="md-seq-row" id="mdSeqChangeStatusRow" style="display:none;">
+								<span class="md-seq-k">สถานะ :</span>
+								<span id="mdSeqChangeStatusBadge" class="md-appr-badge warn">-</span>
+							</div>
 							<button type="button" class="md-seq-fold-toggle" id="mdSeqCertFoldBtn" style="display:none;">
 								<span id="mdSeqCertFoldText">การขอบรรจุแผน</span>
 								<i class="fa fa-chevron-down"></i>
@@ -9733,10 +9758,35 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		var certs = resp && resp.certifiers ? resp.certifiers : [];
 		var operateApprovers = (flowType === 'operate' && resp && Array.isArray(resp.approvers)) ? resp.approvers : [];
 		var splitOperateChains = operateApprovers.length > 0;
+		function pmApprRenderChangeStatusRow(src){
+			var $chgStRow = $('#mdSeqChangeStatusRow');
+			var $chgStBadge = $('#mdSeqChangeStatusBadge');
+			if (!$chgStRow.length || !$chgStBadge.length) return;
+			if (flowType !== 'change') {
+				$chgStRow.hide();
+				return;
+			}
+			var reqInfo = (src && src.request) ? src.request : {};
+			var chgLabel = String(reqInfo.status_label || '').trim();
+			var chgBadge = String(reqInfo.status_badge || 'warn').trim() || 'warn';
+			var chgSt = String(reqInfo.req_status || reqInfo.status || '').trim();
+			var chgApplied = String(reqInfo.applied_at || (src && src.change_detail && src.change_detail.applied_at) || '').trim();
+			if (!chgLabel) {
+				if (chgSt === 'rejected') { chgLabel = 'ตีกลับ'; chgBadge = 'no'; }
+				else if (chgSt === 'approved' && chgApplied) { chgLabel = 'แก้ไขแล้ว'; chgBadge = 'ok'; }
+				else if (chgSt === 'approved') { chgLabel = 'อนุมัติแล้ว รอหน่วยแผนแก้ไข'; chgBadge = 'warn'; }
+				else if (chgSt === 'waiting_plan') { chgLabel = 'รอหน่วยแผนเลือกผู้อนุมัติ'; chgBadge = 'warn'; }
+				else if (chgSt === 'pending_approve') { chgLabel = 'รออนุมัติ'; chgBadge = 'warn'; }
+				else { chgLabel = 'อยู่ระหว่างพิจารณา'; chgBadge = 'warn'; }
+			}
+			$chgStBadge.removeClass('ok warn no').addClass(chgBadge).text(chgLabel);
+			$chgStRow.show();
+		}
 		if (!certs.length) {
 			if (flowType === 'operate' || flowType === 'report' || flowType === 'change') {
 				$w.show();
 				$('#mdSeqSubmitter').text(resp && resp.sender_name ? resp.sender_name : '-');
+				try { pmApprRenderChangeStatusRow(resp); } catch (_eChgSt0) {}
 				var emptyMsg = flowType === 'report'
 					? 'ยังไม่มีลำดับผู้ตรวจสอบรายงานผล'
 					: (flowType === 'change'
@@ -9746,6 +9796,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 				try { $('#mdSeqActorBlock').hide(); } catch(_eAb0) {}
 			} else {
 				$w.hide();
+				try { $('#mdSeqChangeStatusRow').hide(); } catch (_eChgHide0) {}
 			}
 			try { $('#mdPlanUnitWrap').hide(); } catch(_epu0) {}
 			try { renderPlanAdminRechainPanel(resp, flowType); } catch (_eRcEarly0) {}
@@ -9754,6 +9805,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		}
 		$w.show();
 		$('#mdSeqSubmitter').text(resp.sender_name || '-');
+		try { pmApprRenderChangeStatusRow(resp); } catch (_eChgSt) {}
 
 		var linkCtx = pmApprResolveLinkContext(resp);
 		var baseApproveLink = '';
@@ -10312,7 +10364,16 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 			$('#mdSeqHeadText').text(seqHeadShort);
 			$head.addClass('md-seq-head-toggle is-collapsed').attr('data-foldable', '1');
 			$('#mdSeqHeadChevron').show();
-			$body.hide();
+			// คำขอเปลี่ยนแปลง: คงแถวสถานะไว้แม้พับลำดับ — ไม่ซ่อนทั้งแผง
+			if (flowType === 'change') {
+				$body.show();
+				$foldBtn.show().addClass('is-collapsed');
+				$('#mdSeqCertFoldText').text(seqHeadShort);
+				$certWrap.hide();
+				$head.removeClass('is-collapsed');
+			} else {
+				$body.hide();
+			}
 			return;
 		}
 		if (allSeqApproved) {
