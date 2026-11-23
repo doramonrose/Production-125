@@ -1979,54 +1979,69 @@ if (!function_exists('pm_load_change_request_review_rows')) {
 		$reqStatus = trim((string)($changeReq['req_status'] ?? 'pending'));
 		$certList = $parseChain($changeReq['certifiers_json'] ?? '');
 		$apprList = $parseChain($changeReq['approvers_json'] ?? '');
-		$useApprover = ($reqStatus === 'pending_approve' || $reqStatus === 'approved') && !empty($apprList);
-		$activeList = $useApprover ? $apprList : $certList;
-		$decBySort = $loadDec(
-			$db_Project,
-			$useApprover ? 'project_change_approver_decision' : 'project_change_certifier_decision',
-			$reqId
-		);
-		$allSortOrders = array_keys($activeList);
-		sort($allSortOrders, SORT_NUMERIC);
-		$rows = [];
-		foreach ($allSortOrders as $so) {
-			$dec = (string)(($decBySort[$so]['decision'] ?? '') ?: '');
-			$decAt = (string)(($decBySort[$so]['decided_at'] ?? '') ?: '');
-			$decNote = (string)(($decBySort[$so]['certifier_note'] ?? '') ?: '');
-			$st = 'waiting_queue';
-			if ($dec === 'approved') {
-				$st = 'approved';
-			} elseif ($dec === 'rejected') {
-				$st = 'rejected';
-			} else {
-				$prevOk = true;
-				foreach ($allSortOrders as $pso) {
-					if ($pso >= $so) {
-						break;
+		$hasApprovers = ($reqStatus === 'pending_approve' || $reqStatus === 'approved' || $reqStatus === 'waiting_plan')
+			&& !empty($apprList);
+		if (!$hasApprovers && !empty($apprList) && trim((string)($changeReq['approvers_json'] ?? '')) !== '') {
+			$hasApprovers = true;
+		}
+		$buildRows = static function (array $chainList, array $decBySort) use ($staffName): array {
+			$allSortOrders = array_keys($chainList);
+			sort($allSortOrders, SORT_NUMERIC);
+			$rows = [];
+			foreach ($allSortOrders as $so) {
+				$dec = (string)(($decBySort[$so]['decision'] ?? '') ?: '');
+				$decAt = (string)(($decBySort[$so]['decided_at'] ?? '') ?: '');
+				$decNote = (string)(($decBySort[$so]['certifier_note'] ?? '') ?: '');
+				$st = 'waiting_queue';
+				if ($dec === 'approved') {
+					$st = 'approved';
+				} elseif ($dec === 'rejected') {
+					$st = 'rejected';
+				} else {
+					$prevOk = true;
+					foreach ($allSortOrders as $pso) {
+						if ($pso >= $so) {
+							break;
+						}
+						if ((string)(($decBySort[$pso]['decision'] ?? '') ?: '') !== 'approved') {
+							$prevOk = false;
+							break;
+						}
 					}
-					if ((string)(($decBySort[$pso]['decision'] ?? '') ?: '') !== 'approved') {
-						$prevOk = false;
-						break;
-					}
+					$st = $prevOk ? 'waiting_turn' : 'waiting_queue';
 				}
-				$st = $prevOk ? 'waiting_turn' : 'waiting_queue';
+				$sidC = (int)($chainList[$so]['staff_id'] ?? 0);
+				$rows[] = [
+					'sort_order' => (int)$so,
+					'staff_id' => $sidC,
+					'staff_name' => $staffName($sidC),
+					'position_title' => (string)($chainList[$so]['position_title'] ?? ''),
+					'status' => $st,
+					'decision' => $dec,
+					'decided_at' => $decAt,
+					'decided_at_th' => function_exists('pm_change_thai_dt') ? pm_change_thai_dt($decAt) : $decAt,
+					'note' => $decNote,
+				];
 			}
-			$sidC = (int)($activeList[$so]['staff_id'] ?? 0);
-			$rows[] = [
-				'sort_order' => (int)$so,
-				'staff_id' => $sidC,
-				'staff_name' => $staffName($sidC),
-				'position_title' => (string)($activeList[$so]['position_title'] ?? ''),
-				'status' => $st,
-				'decision' => $dec,
-				'decided_at' => $decAt,
-				'decided_at_th' => function_exists('pm_change_thai_dt') ? pm_change_thai_dt($decAt) : $decAt,
-				'note' => $decNote,
-			];
+			return $rows;
+		};
+		// คงประวัติผู้รับรองเสมอ แม้แผนเลือกผู้อนุมัติแล้ว
+		$certRows = $buildRows(
+			$certList,
+			$loadDec($db_Project, 'project_change_certifier_decision', $reqId)
+		);
+		$apprRows = [];
+		if (!empty($apprList)) {
+			$apprRows = $buildRows(
+				$apprList,
+				$loadDec($db_Project, 'project_change_approver_decision', $reqId)
+			);
 		}
 		return [
 			'submitter_name' => $staffName((int)($changeReq['staff_insert'] ?? 0)),
-			'rows' => $rows,
+			'rows' => $certRows,
+			'approver_rows' => $apprRows,
+			'has_approvers' => !empty($apprRows),
 		];
 	}
 }
@@ -5467,7 +5482,12 @@ function staffCanViewPreProjectManageDetail($db_Project, $project_id, $staff_id,
         && staffMatchesProjectUnitAdminScope($db_Project, $pre, $staff_id, $staff_code, $staff_unit_code)) {
         return true;
     }
-    foreach (['operate_certifiers_json', 'operate_approvers_json', 'result_report_certifiers_json'] as $jsonCol) {
+    foreach ([
+        'operate_certifiers_json',
+        'operate_approvers_json',
+        'result_report_certifiers_json',
+        'include_certifiers_json',
+    ] as $jsonCol) {
         $raw = trim((string)($pre[$jsonCol] ?? ''));
         if ($raw === '') {
             continue;
@@ -5479,6 +5499,45 @@ function staffCanViewPreProjectManageDetail($db_Project, $project_id, $staff_id,
         foreach ($arr as $it) {
             if (is_array($it) && (int)($it['staff_id'] ?? 0) === $staff_id) {
                 return true;
+            }
+        }
+    }
+    // ผู้ตรวจสอบขอบรรจุแผน (ตารางคำขอ) — บางโครงการเก็บเฉพาะตาราง ไม่ได้อยู่ใน JSON
+    $qIncCert = @mysqli_query(
+        $db_Project,
+        "SELECT 1
+         FROM project_include_request_certifier c
+         INNER JOIN project_include_request_item i ON i.request_id = c.request_id
+         WHERE i.project_id='" . $project_id . "'
+           AND c.staff_id='" . $staff_id . "'
+         LIMIT 1"
+    );
+    if ($qIncCert && mysqli_fetch_assoc($qIncCert)) {
+        return true;
+    }
+    // ผู้รับรอง/ผู้อนุมัติคำขอเปลี่ยนแปลงโครงการ
+    $qChg = @mysqli_query(
+        $db_Project,
+        "SELECT certifiers_json, approvers_json
+         FROM project_change_request
+         WHERE project_id='" . $project_id . "' AND status='1'
+         ORDER BY id DESC
+         LIMIT 20"
+    );
+    while ($qChg && ($chg = mysqli_fetch_assoc($qChg))) {
+        foreach (['certifiers_json', 'approvers_json'] as $jk) {
+            $raw = trim((string)($chg[$jk] ?? ''));
+            if ($raw === '') {
+                continue;
+            }
+            $arr = json_decode($raw, true);
+            if (!is_array($arr)) {
+                continue;
+            }
+            foreach ($arr as $it) {
+                if (is_array($it) && (int)($it['staff_id'] ?? 0) === $staff_id) {
+                    return true;
+                }
             }
         }
     }

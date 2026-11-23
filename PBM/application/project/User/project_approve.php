@@ -2284,10 +2284,83 @@ if ($pm_appr_route_op === 'get_change_request_detail') {
 	$apprList = $parseChain($req['approvers_json'] ?? '');
 	$reqStatus = trim((string)($req['req_status'] ?? 'pending'));
 	$useApprover = ($reqStatus === 'pending_approve' || $reqStatus === 'approved') && !empty($apprList);
-	$activeList = $useApprover ? $apprList : $certList;
-	$decBySort = $loadDec($db_Project, $useApprover ? 'project_change_approver_decision' : 'project_change_certifier_decision', $request_id);
-	$allSortOrders = array_keys($activeList);
-	sort($allSortOrders, SORT_NUMERIC);
+	$buildChangeChainPayload = static function (array $chainList, array $decBySort, $staffNameFn) {
+		$allSortOrders = array_keys($chainList);
+		sort($allSortOrders, SORT_NUMERIC);
+		$current_turn_sort = 0;
+		$current_turn_name = '-';
+		$payload = [];
+		foreach ($allSortOrders as $so) {
+			$dec = (string)(($decBySort[$so]['decision'] ?? '') ?: '');
+			$decAt = (string)(($decBySort[$so]['decided_at'] ?? '') ?: '');
+			$decNote = (string)(($decBySort[$so]['certifier_note'] ?? '') ?: '');
+			$st = 'waiting_queue';
+			if ($dec === 'approved') {
+				$st = 'approved';
+			} elseif ($dec === 'rejected') {
+				$st = 'rejected';
+			} else {
+				$prevOk = true;
+				foreach ($allSortOrders as $pso) {
+					if ($pso >= $so) {
+						break;
+					}
+					if ((string)(($decBySort[$pso]['decision'] ?? '') ?: '') !== 'approved') {
+						$prevOk = false;
+						break;
+					}
+				}
+				$st = $prevOk ? 'waiting_turn' : 'waiting_queue';
+				if ($st === 'waiting_turn' && $current_turn_sort <= 0) {
+					$current_turn_sort = (int)$so;
+					$current_turn_name = $staffNameFn((int)($chainList[$so]['staff_id'] ?? 0));
+				}
+			}
+			$sidC = (int)($chainList[$so]['staff_id'] ?? 0);
+			$payload[] = [
+				'sort_order' => (int)$so,
+				'staff_id' => $sidC,
+				'staff_name' => $staffNameFn($sidC),
+				'position_title' => (string)($chainList[$so]['position_title'] ?? ''),
+				'status' => $st,
+				'decision' => $dec,
+				'decided_at' => $decAt,
+				'certifier_note' => $decNote,
+				'note' => $decNote,
+				'is_current_turn' => ((int)$so === (int)$current_turn_sort) ? 1 : 0,
+				'can_edit_row' => 0,
+			];
+		}
+		return [
+			'payload' => $payload,
+			'orders' => $allSortOrders,
+			'dec' => $decBySort,
+			'current_turn_sort' => $current_turn_sort,
+			'current_turn_name' => $current_turn_name,
+		];
+	};
+	// ประวัติผู้รับรองคงไว้เสมอ แม้แผนเลือกผู้อนุมัติแล้ว
+	$certDecMapForHist = $loadDec($db_Project, 'project_change_certifier_decision', $request_id);
+	$certChainBuilt = $buildChangeChainPayload($certList, $certDecMapForHist, $staffName);
+	$certifiers_payload = $certChainBuilt['payload'];
+	$change_approvers_payload = [];
+	$activeList = $certList;
+	$decBySort = $certDecMapForHist;
+	$allSortOrders = $certChainBuilt['orders'];
+	$current_turn_sort = (int)$certChainBuilt['current_turn_sort'];
+	$current_turn_name = (string)$certChainBuilt['current_turn_name'];
+	if (!empty($apprList)) {
+		$apprDecMap = $loadDec($db_Project, 'project_change_approver_decision', $request_id);
+		$apprChainBuilt = $buildChangeChainPayload($apprList, $apprDecMap, $staffName);
+		$change_approvers_payload = $apprChainBuilt['payload'];
+		if ($useApprover) {
+			$activeList = $apprList;
+			$decBySort = $apprDecMap;
+			$allSortOrders = $apprChainBuilt['orders'];
+			$current_turn_sort = (int)$apprChainBuilt['current_turn_sort'];
+			$current_turn_name = (string)$apprChainBuilt['current_turn_name'];
+		}
+	}
 	$myOrders = [];
 	foreach ($allSortOrders as $so) {
 		if ((int)($activeList[$so]['staff_id'] ?? 0) === (int)$sid) {
@@ -2304,50 +2377,6 @@ if ($pm_appr_route_op === 'get_change_request_detail') {
 	}
 	if ($my_sort_order <= 0 && count($myOrders) > 0) {
 		$my_sort_order = (int)$myOrders[0];
-	}
-	$current_turn_sort = 0;
-	$current_turn_name = '-';
-	$certifiers_payload = [];
-	foreach ($allSortOrders as $so) {
-		$dec = (string)(($decBySort[$so]['decision'] ?? '') ?: '');
-		$decAt = (string)(($decBySort[$so]['decided_at'] ?? '') ?: '');
-		$decNote = (string)(($decBySort[$so]['certifier_note'] ?? '') ?: '');
-		$st = 'waiting_queue';
-		if ($dec === 'approved') {
-			$st = 'approved';
-		} elseif ($dec === 'rejected') {
-			$st = 'rejected';
-		} else {
-			$prevOk = true;
-			foreach ($allSortOrders as $pso) {
-				if ($pso >= $so) {
-					break;
-				}
-				if ((string)(($decBySort[$pso]['decision'] ?? '') ?: '') !== 'approved') {
-					$prevOk = false;
-					break;
-				}
-			}
-			$st = $prevOk ? 'waiting_turn' : 'waiting_queue';
-			if ($st === 'waiting_turn' && $current_turn_sort <= 0) {
-				$current_turn_sort = (int)$so;
-				$current_turn_name = $staffName((int)($activeList[$so]['staff_id'] ?? 0));
-			}
-		}
-		$sidC = (int)($activeList[$so]['staff_id'] ?? 0);
-		$certifiers_payload[] = [
-			'sort_order' => (int)$so,
-			'staff_id' => $sidC,
-			'staff_name' => $staffName($sidC),
-			'position_title' => (string)($activeList[$so]['position_title'] ?? ''),
-			'status' => $st,
-			'decision' => $dec,
-			'decided_at' => $decAt,
-			'certifier_note' => $decNote,
-			'note' => $decNote,
-			'is_current_turn' => ((int)$so === (int)$current_turn_sort) ? 1 : 0,
-			'can_edit_row' => 0,
-		];
 	}
 	$my_decision = ($my_sort_order > 0) ? (string)(($decBySort[$my_sort_order]['decision'] ?? '') ?: '') : '';
 	$can_act_modal = false;
@@ -2494,6 +2523,7 @@ if ($pm_appr_route_op === 'get_change_request_detail') {
 		'project_group' => $project_group,
 		'change_request_id' => (int)$request_id,
 		'certifiers' => $certifiers_payload,
+		'approvers' => $change_approvers_payload,
 		'action_logs' => [],
 		'submitter_reply' => ['can_edit' => false, 'note' => '', 'updated_at' => ''],
 		'pipeline' => [
@@ -9756,7 +9786,7 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 		$('#mdSeqCertFoldBtn').hide().removeClass('is-collapsed');
 		$('#mdSeqCertWrap').show();
 		var certs = resp && resp.certifiers ? resp.certifiers : [];
-		var operateApprovers = (flowType === 'operate' && resp && Array.isArray(resp.approvers)) ? resp.approvers : [];
+		var operateApprovers = ((flowType === 'operate' || flowType === 'change') && resp && Array.isArray(resp.approvers)) ? resp.approvers : [];
 		var splitOperateChains = operateApprovers.length > 0;
 		function pmApprRenderChangeStatusRow(src){
 			var $chgStRow = $('#mdSeqChangeStatusRow');
@@ -10122,6 +10152,11 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 			});
 			// Show the full approver chain while the first decision is still pending.
 			if (operateApprovers.length > 0) {
+				try {
+					$('#mdSeqApproverHead > span').first().text(
+						flowType === 'change' ? 'การอนุมัติคำขอเปลี่ยนแปลง' : 'การอนุมัติโครงการ'
+					);
+				} catch (_eApprHd) {}
 				var totalAppr = operateApprovers.length;
 				var bannerCls = 'md-appr-banner';
 				var bannerTitle = '';
@@ -10129,10 +10164,14 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 					bannerCls += ' is-no';
 					bannerTitle = '<i class="fa fa-undo"></i> ผู้อนุมัติตีกลับให้แก้ไข (' + okCount + '/' + totalAppr + ' ลำดับ)';
 				} else if (okCount === totalAppr) {
-					bannerTitle = '<i class="fa fa-check-circle"></i> โครงการได้รับการอนุมัติตาม Flow แล้ว (' + okCount + '/' + totalAppr + ' ลำดับ)';
+					bannerTitle = flowType === 'change'
+						? ('<i class="fa fa-check-circle"></i> คำขอเปลี่ยนแปลงได้รับอนุมัติครบแล้ว (' + okCount + '/' + totalAppr + ' ลำดับ)')
+						: ('<i class="fa fa-check-circle"></i> โครงการได้รับการอนุมัติตาม Flow แล้ว (' + okCount + '/' + totalAppr + ' ลำดับ)');
 				} else {
 					bannerCls += ' is-wait';
-					bannerTitle = '<i class="fa fa-hourglass-half"></i> รอการอนุมัติโครงการตาม Flow (' + okCount + '/' + totalAppr + ' ลำดับ)';
+					bannerTitle = flowType === 'change'
+						? ('<i class="fa fa-hourglass-half"></i> รอการอนุมัติคำขอเปลี่ยนแปลง (' + okCount + '/' + totalAppr + ' ลำดับ)')
+						: ('<i class="fa fa-hourglass-half"></i> รอการอนุมัติโครงการตาม Flow (' + okCount + '/' + totalAppr + ' ลำดับ)');
 				}
 				var banner = '<div class="' + bannerCls + '"><span class="md-appr-banner-title">' + bannerTitle + '</span>';
 				if (lastApproved) {
@@ -10144,10 +10183,11 @@ $getStaffNameById = function($staffId) use ($db_person, &$staffNameCache) {
 				banner += '</div>';
 				$('#mdSeqApproverBanner').html(banner);
 				var apprHtml = '';
-				operateApprovers.forEach(function(c){
+				operateApprovers.forEach(function(c, apprIdx){
 					var st = String(c.status || '');
+					var isLastAppr = (apprIdx === (operateApprovers.length - 1));
 					var tag = '';
-					if (st === 'approved') tag = '<span class="md-appr-badge ok">อนุมัติ</span>';
+					if (st === 'approved') tag = '<span class="md-appr-badge ok">' + (isLastAppr ? 'อนุมัติ' : 'ผ่าน') + '</span>';
 					else if (st === 'rejected') tag = '<span class="md-appr-badge no">ตีกลับเพื่อแก้ไข</span>';
 					else if (st === 'waiting_turn') tag = '<span class="md-appr-badge warn">รออนุมัติ</span>';
 					else tag = '<span class="md-appr-badge warn">รอลำดับก่อนหน้า</span>';

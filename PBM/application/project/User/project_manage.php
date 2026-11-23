@@ -20174,6 +20174,32 @@ if ($op === 'add_project') {
 									'position_title' => trim((string)($cr['position_title'] ?? '')),
 								];
 							}
+							// fallback: บางโครงการมีเฉพาะ include_certifiers_json
+							if (empty($certMapInc)) {
+								$__incJsonRaw = trim((string)($saved_pre['include_certifiers_json'] ?? ''));
+								$__incJsonArr = $__incJsonRaw !== '' ? json_decode($__incJsonRaw, true) : null;
+								$__incSeq = 0;
+								if (is_array($__incJsonArr)) {
+									foreach ($__incJsonArr as $__ic) {
+										if (!is_array($__ic)) {
+											continue;
+										}
+										$__incSeq++;
+										$__soJ = (int)($__ic['sort_order'] ?? 0);
+										if ($__soJ <= 0) {
+											$__soJ = $__incSeq;
+										}
+										$__sidJ = (int)($__ic['staff_id'] ?? 0);
+										if ($__sidJ <= 0) {
+											continue;
+										}
+										$certMapInc[$__soJ] = [
+											'staff_id' => $__sidJ,
+											'position_title' => trim((string)($__ic['position'] ?? $__ic['position_title'] ?? '')),
+										];
+									}
+								}
+							}
 
 							$decMapInc = [];
 							$qD = @mysqli_query(
@@ -21265,13 +21291,15 @@ if ($op === 'add_project') {
 					<?php if (!empty($pm_approver_rows) && empty($pm_is_legacy_operate_approver)): ?>
 						<div class="pm-review-timeline mt-2">
 							<div class="pm-review-timeline-title">ลำดับผู้อนุมัติ</div>
-							<?php foreach ($pm_approver_rows as $__idx => $__orow): ?>
-								<?php
+							<?php
+								$__apprTotal = count($pm_approver_rows);
+								foreach ($pm_approver_rows as $__idx => $__orow):
 									$__st = (string)($__orow['status'] ?? '');
+									$__isLastAppr = ((int)$__idx === ((int)$__apprTotal - 1));
 									$__badgeTxt = 'รอลำดับก่อนหน้า';
 									$__badgeCls = 'pm-notify-result-badge warn';
 									if ($__st === 'approved') {
-										$__badgeTxt = 'อนุมัติ';
+										$__badgeTxt = $__isLastAppr ? 'อนุมัติ' : 'ผ่าน';
 										$__badgeCls = 'pm-notify-result-badge ok';
 									} elseif ($__st === 'rejected') {
 										$__badgeTxt = 'ตีกลับเพื่อแก้ไข';
@@ -21369,8 +21397,9 @@ if ($op === 'add_project') {
 						$__chDetails = is_array($__ch['details'] ?? null) ? $__ch['details'] : [];
 						$__chReview = function_exists('pm_load_change_request_review_rows')
 							? pm_load_change_request_review_rows($db_Project, $db_person ?? null, is_array($__ch) ? $__ch : [])
-							: ['submitter_name' => '-', 'rows' => []];
+							: ['submitter_name' => '-', 'rows' => [], 'approver_rows' => []];
 						$__chReviewRows = is_array($__chReview['rows'] ?? null) ? $__chReview['rows'] : [];
+						$__chApproverRows = is_array($__chReview['approver_rows'] ?? null) ? $__chReview['approver_rows'] : [];
 						$__chSubmitter = trim((string)($__chReview['submitter_name'] ?? '-'));
 					?>
 					<div class="pm-chg-hist-round">
@@ -21538,6 +21567,56 @@ if ($op === 'add_project') {
 														<span class="pm-review-note-label"><i class="fa fa-comment-dots mr-1"></i>ข้อเสนอแนะ</span>
 													</div>
 													<div class="pm-review-note-body"><?= nl2br(htmlspecialchars($__crNote, ENT_QUOTES, 'UTF-8')) ?></div>
+												</div>
+											<?php endif; ?>
+										</div>
+									</div>
+								<?php endforeach; ?>
+							<?php endif; ?>
+							<?php if (!empty($__chApproverRows)): ?>
+								<div class="pm-review-timeline-title mt-3">ลำดับผู้อนุมัติ</div>
+								<?php
+									$__chApprTotal = count($__chApproverRows);
+									foreach ($__chApproverRows as $__apIdx => $__apRow):
+										$__apSt = (string)($__apRow['status'] ?? '');
+										$__apIsLast = ((int)$__apIdx === ((int)$__chApprTotal - 1));
+										$__apBadgeTxt = 'รอลำดับก่อนหน้า';
+										$__apBadgeCls = 'pm-notify-result-badge warn';
+										if ($__apSt === 'approved') {
+											$__apBadgeTxt = $__apIsLast ? 'อนุมัติ' : 'ผ่าน';
+											$__apBadgeCls = 'pm-notify-result-badge ok';
+										} elseif ($__apSt === 'rejected') {
+											$__apBadgeTxt = 'ตีกลับเพื่อแก้ไข';
+											$__apBadgeCls = 'pm-notify-result-badge no';
+										} elseif ($__apSt === 'waiting_turn') {
+											$__apBadgeTxt = 'รออนุมัติ';
+										}
+										$__apNote = trim((string)($__apRow['note'] ?? ''));
+										$__apWhen = trim((string)($__apRow['decided_at_th'] ?? ''));
+									?>
+									<div class="pm-review-item">
+										<div class="pm-review-dot"><?= htmlspecialchars((string)($__apRow['sort_order'] ?? ($__apIdx + 1)), ENT_QUOTES, 'UTF-8') ?></div>
+										<div class="pm-review-content">
+											<div class="pm-review-head">
+												<span class="pm-review-label"><?= htmlspecialchars((string)($__apRow['staff_name'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></span>
+												<?php if (trim((string)($__apRow['position_title'] ?? '')) !== ''): ?>
+													<span class="pm-review-meta"><?= htmlspecialchars((string)$__apRow['position_title'], ENT_QUOTES, 'UTF-8') ?></span>
+												<?php endif; ?>
+											</div>
+											<div class="pm-review-status-row">
+												<span class="<?= htmlspecialchars($__apBadgeCls, ENT_QUOTES, 'UTF-8') ?>">
+													<?= htmlspecialchars($__apBadgeTxt, ENT_QUOTES, 'UTF-8') ?>
+												</span>
+												<?php if ($__apWhen !== ''): ?>
+													<span class="pm-review-when"><?= htmlspecialchars($__apWhen, ENT_QUOTES, 'UTF-8') ?></span>
+												<?php endif; ?>
+											</div>
+											<?php if ($__apNote !== ''): ?>
+												<div class="pm-review-note<?= $__apSt === 'rejected' ? ' pm-review-note-reject' : '' ?>">
+													<div class="pm-review-note-head">
+														<span class="pm-review-note-label"><i class="fa fa-comment-dots mr-1"></i>ข้อเสนอแนะ</span>
+													</div>
+													<div class="pm-review-note-body"><?= nl2br(htmlspecialchars($__apNote, ENT_QUOTES, 'UTF-8')) ?></div>
 												</div>
 											<?php endif; ?>
 										</div>
