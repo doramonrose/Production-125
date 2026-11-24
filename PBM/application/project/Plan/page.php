@@ -527,9 +527,9 @@ if ($row = mysqli_fetch_array($result)) {
 								<div class="fadeable w-100 pm-side-brand-expanded">
 									<!-- shown when sidebar is full-width (mobile only; desktop ซ่อน — แสดงตอนย่อเมนู) -->
 									<div class="py-2 text-center mx-2" id="sidebar-header-brand2">
-										<a class="navbar-brand pm-side-brand" href="page.php?page=dashboard">
+										<a class="navbar-brand pm-side-brand pm-side-brand-planwise" href="page.php?page=dashboard">
 											<span class="pm-side-logo-wrap">
-												<img src="../../image/plan-logo1.png" alt="ระบบบริหารโครงการ" class="pm-side-logo">
+												<img src="../../image/PlanWise_Project_nobg.png" alt="PlanWise ระบบบริหารโครงการ" class="pm-side-logo pm-side-logo-planwise">
 											</span>
 											<div class="pm-side-brand-title">ระบบบริหารโครงการ</div>
 											<span class="pm-side-brand-badge">Pharmacy CMU</span>

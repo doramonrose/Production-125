@@ -365,6 +365,20 @@ $monthMap = [
 
 $printed_at = date('d/m/') . ((int)date('Y') + 543) . ' ' . date('H:i');
 $title = ($name_project !== '' ? $name_project : 'โครงการ') . ($ref_code !== '' ? ' (' . $ref_code . ')' : '');
+$approvedChangeRound = 0;
+if ($project_id > 0 && function_exists('pm_load_project_change_requests')) {
+	$__chgList = pm_load_project_change_requests($db_Project, (int)$project_id);
+	foreach ($__chgList as $__chgRow) {
+		$__chgSt = strtolower(trim((string)($__chgRow['req_status'] ?? '')));
+		if ($__chgSt === 'approved' || $__chgSt === 'applied') {
+			$approvedChangeRound++;
+		}
+	}
+}
+$revisionNoteText = $approvedChangeRound > 0
+	? ('หมายเหตุ : โครงการฉบับปรับปรุง รอบที่ ' . $approvedChangeRound)
+	: '';
+
 $wantPdf = $isPrintApiMode
 	|| (isset($op) && $op === 'print_project_pdf')
 	|| (isset($_GET['format']) && (string)$_GET['format'] === 'pdf');
@@ -619,7 +633,8 @@ if ($wantPdf) {
 		2. เครื่องมือ : ' . $plain($pre['evaluate_tool'] ?? '') . '<br>
 		3. ความเสี่ยงที่คาดว่าจะเกิดขึ้น : ' . $plain($pre['risk_action'] ?? '') . '<br>
 		4. วิธีป้องกันความเสี่ยง : ' . $plain($pre['risk_stop'] ?? '') . '</td>
-	</tr></table></div>';
+	</tr></table></div>'
+	. ($revisionNoteText !== '' ? '<div style="margin-top:8px;font-size:10pt;font-weight:bold;color:#1e293b;">' . $h($revisionNoteText) . '</div>' : '');
 
 	$tempDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'project_print_pdf';
 	if (!is_dir($tempDir)) {
@@ -1206,6 +1221,11 @@ if ($wantPdf) {
 				</div>
 			</div>
 		</div>
+		<?php if ($revisionNoteText !== ''): ?>
+		<div style="margin-top:10px;font-size:13px;font-weight:700;color:#1e293b;">
+			<?= $h($revisionNoteText) ?>
+		</div>
+		<?php endif; ?>
 	</div>
 </body>
 </html>

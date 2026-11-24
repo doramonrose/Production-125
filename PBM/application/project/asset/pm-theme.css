@@ -409,6 +409,46 @@ h1, h2, h3, h4, h5, h6,
 	object-position: left center;
 	filter: none;
 }
+/* โลโก้ PlanWise เป็นภาพล้วน (เฉพาะกรอบเมนูขยาย — ไม่กระทบโลโก้ตอนย่อเมนู) */
+#sidebar-header-brand2 .pm-side-brand-planwise,
+#sidebar #sidebar-header-brand2 .navbar-brand.pm-side-brand.pm-side-brand-planwise{
+	padding: 0;
+	margin: 0 auto;
+	background: transparent;
+	border: 0;
+	border-radius: 0;
+	box-shadow: none;
+	gap: 0;
+	max-width: 100%;
+}
+#sidebar-header-brand2 .pm-side-brand-planwise:hover{
+	transform: none;
+	box-shadow: none;
+}
+#sidebar-header-brand2 .pm-side-brand-planwise .pm-side-brand-title,
+#sidebar-header-brand2 .pm-side-brand-planwise .pm-side-brand-badge{
+	display: none !important;
+}
+#sidebar-header-brand2 .pm-side-brand-planwise .pm-side-logo-wrap{
+	display: flex !important;
+	width: 100%;
+	height: auto;
+	margin: 0;
+	padding: 0;
+	overflow: hidden;
+	border-radius: .8rem;
+	background: transparent;
+	box-shadow: none;
+}
+#sidebar-header-brand2 .pm-side-brand-planwise .pm-side-logo-wrap .pm-side-logo-planwise{
+	display: block;
+	width: 100% !important;
+	height: auto !important;
+	max-width: 100% !important;
+	margin: 0;
+	object-fit: contain;
+	object-position: center;
+}
 #sidebar-header-brand2 .pm-side-brand-badge{
 	position: relative;
 	z-index: 1;

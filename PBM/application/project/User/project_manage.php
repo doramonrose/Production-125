@@ -2761,6 +2761,72 @@ if (!function_exists('pm_render_budget_plan_actual_summary')) {
 	}
 }
 
+if (!function_exists('pm_render_budget_source_summary_box')) {
+	function pm_render_budget_source_summary_box($db_Project, int $project_id, array $data): void
+	{
+		if ($project_id <= 0 || !($db_Project instanceof mysqli)) {
+			return;
+		}
+		$rows = function_exists('pm_project_budget_source_rows')
+			? pm_project_budget_source_rows($db_Project, $project_id)
+			: [];
+		$projectEstimate = (float)($data['project_estimate'] ?? 0);
+		$projectDisbursed = (float)($data['project_disbursed_total'] ?? 0);
+		if (empty($rows)) {
+			$fallbackLbl = function_exists('resolveProjectBudgetSourceForDisplay')
+				? trim((string)resolveProjectBudgetSourceForDisplay($db_Project, $project_id))
+				: '';
+			if ($fallbackLbl !== '' && $fallbackLbl !== '-') {
+				$rows[] = [
+					'label' => $fallbackLbl,
+					'amount' => $projectEstimate > 0 ? $projectEstimate : null,
+				];
+			}
+		}
+		if (empty($rows)) {
+			return;
+		}
+		$fmt = function ($v) {
+			return pm_fmt_budget_money($v, false);
+		};
+		$remainingDisb = max(0.0, $projectDisbursed);
+		$rowCount = count($rows);
+		?>
+		<div class="pm-budget-source-summary-box mb-3" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:.75rem;padding:.75rem 1rem;font-size:.86rem;line-height:1.65;color:#1e293b;">
+			<div style="font-weight:800;color:#4c1d95;margin-bottom:.3rem;">
+				<i class="fa fa-wallet mr-1"></i> แหล่งงบประมาณ
+			</div>
+			<?php foreach ($rows as $idx => $sr):
+				$lbl = trim((string)($sr['label'] ?? ''));
+				if ($lbl === '') {
+					continue;
+				}
+				$amt = ($sr['amount'] !== null) ? (float)$sr['amount'] : ($rowCount === 1 ? $projectEstimate : null);
+				if ($amt !== null) {
+					if ($idx === $rowCount - 1) {
+						$used = $remainingDisb;
+					} else {
+						$used = min($amt, $remainingDisb);
+					}
+					$remainingDisb = max(0.0, $remainingDisb - $used);
+					$rem = max(0.0, $amt - $used);
+				} else {
+					$used = null;
+					$rem = null;
+				}
+			?>
+				<div class="<?= $idx > 0 ? 'mt-2' : '' ?>">
+					- <?= htmlspecialchars($lbl, ENT_QUOTES, 'UTF-8') ?><?php if ($amt !== null): ?>
+						<strong><?= htmlspecialchars($fmt($amt), ENT_QUOTES, 'UTF-8') ?> บาท</strong>
+						<span class="text-muted">(ใช้ไป <strong class="text-dark"><?= htmlspecialchars($fmt($used), ENT_QUOTES, 'UTF-8') ?></strong> บาท คงเหลือ <strong class="text-success"><?= htmlspecialchars($fmt($rem), ENT_QUOTES, 'UTF-8') ?></strong> บาท)</span>
+					<?php endif; ?>
+				</div>
+			<?php endforeach; ?>
+		</div>
+		<?php
+	}
+}
+
 if (!function_exists('pm_render_budget_expense_report_table')) {
 	function pm_render_budget_expense_report_table(array $data, int $project_id, bool $allow_edit = true): void
 	{
@@ -2943,6 +3009,14 @@ if (!function_exists('pm_render_budget_expense_report_table')) {
 												data-activity-id="<?= $actId ?>"
 												data-activity-label="<?= htmlspecialchars($actLabel, ENT_QUOTES, 'UTF-8') ?>">
 												<i class="fa fa-edit mr-1"></i> แก้ไข
+											</button>
+											<button type="button"
+												class="btn btn-sm btn-outline-danger pm-budget-disburse-delete pm-ber-line-delete-btn"
+												data-line-id="<?= $lineId ?>"
+												data-activity-id="<?= $actId ?>"
+												data-line-label="<?= htmlspecialchars($detailTxt, ENT_QUOTES, 'UTF-8') ?>"
+												title="ลบรายการเบิกจ่าย">
+												<i class="fa fa-trash-alt mr-1"></i> ลบ
 											</button>
 										<?php elseif ($lineId > 0 && trim((string)($ln['doc_status'] ?? '')) === 'confirmed'): ?>
 											<span class="pm-ber-confirmed-badge"><i class="fa fa-check-circle"></i> ยืนยันแล้ว</span>
@@ -4744,6 +4818,68 @@ if ($op === 'save_budget_disburse_report_ajax') {
 	exit;
 }
 
+// ลบรายการเบิกจ่ายที่ยังไม่ได้ยืนยัน
+if ($op === 'delete_budget_disburse_line_ajax') {
+	header('Content-Type: application/json; charset=utf-8');
+	while (ob_get_level() > 0) {
+		@ob_end_clean();
+	}
+	$project_id = isset($_POST['project_id']) ? (int)$_POST['project_id'] : 0;
+	$line_id = isset($_POST['line_id']) ? (int)$_POST['line_id'] : 0;
+	if ($project_id <= 0 || $line_id <= 0) {
+		echo json_encode(['ok' => 0, 'msg' => 'ข้อมูลไม่ถูกต้อง'], JSON_UNESCAPED_UNICODE);
+		exit;
+	}
+	$sess_email = $_SESSION['r_email'] ?? '';
+	$sess_code = $_SESSION['code'] ?? '';
+	$sid = 0;
+	$staff_code = '';
+	$unit_code = '';
+	if ($sess_email !== '' && $sess_code !== '') {
+		$st = mysqli_prepare($db_person, 'SELECT id, code, unit_code FROM staff WHERE email = ? AND code = ? LIMIT 1');
+		mysqli_stmt_bind_param($st, 'ss', $sess_email, $sess_code);
+		mysqli_stmt_execute($st);
+		$rs = mysqli_stmt_get_result($st);
+		$rw = $rs ? mysqli_fetch_assoc($rs) : null;
+		if ($rw) {
+			$sid = (int)($rw['id'] ?? 0);
+			$staff_code = (string)($rw['code'] ?? '');
+			$unit_code = (string)($rw['unit_code'] ?? '');
+		}
+	}
+	if ($sid <= 0 || !staffCanFillKpiProjectResult($db_Project, $project_id, $sid, $staff_code, $unit_code)) {
+		echo json_encode(['ok' => 0, 'msg' => 'ไม่มีสิทธิ์ลบรายการเบิกจ่าย'], JSON_UNESCAPED_UNICODE);
+		exit;
+	}
+	$qChk = @mysqli_query(
+		$db_Project,
+		"SELECT l.id, IFNULL(l.doc_status,'') AS doc_status
+		 FROM project_budget_disburse_line l
+		 INNER JOIN project_budget_disburse_report r ON r.id = l.report_id
+		 WHERE l.id='" . (int)$line_id . "' AND l.status='1' AND r.project_id='" . (int)$project_id . "' AND r.status='1'
+		 LIMIT 1"
+	);
+	$rowChk = $qChk ? mysqli_fetch_assoc($qChk) : null;
+	if (!$rowChk) {
+		echo json_encode(['ok' => 0, 'msg' => 'ไม่พบรายการเบิกจ่ายที่ต้องการลบ'], JSON_UNESCAPED_UNICODE);
+		exit;
+	}
+	if (trim((string)($rowChk['doc_status'] ?? '')) === 'confirmed') {
+		echo json_encode(['ok' => 0, 'msg' => 'รายการนี้ยืนยันเบิกจ่ายแล้ว ไม่สามารถลบได้'], JSON_UNESCAPED_UNICODE);
+		exit;
+	}
+	$okDel = @mysqli_query(
+		$db_Project,
+		"UPDATE project_budget_disburse_line SET status='99' WHERE id='" . (int)$line_id . "' AND status='1' AND IFNULL(doc_status,'') <> 'confirmed' LIMIT 1"
+	);
+	if (!$okDel) {
+		echo json_encode(['ok' => 0, 'msg' => 'ไม่สามารถลบรายการเบิกจ่ายได้'], JSON_UNESCAPED_UNICODE);
+		exit;
+	}
+	echo json_encode(['ok' => 1, 'msg' => 'ลบรายการเบิกจ่ายสำเร็จ'], JSON_UNESCAPED_UNICODE);
+	exit;
+}
+
 // ดึงรายละเอียดเบิกจ่ายจากระบบ withdraw (API external/withdraws)
 if ($op === 'get_budget_disburse_external_ajax') {
 	header('Content-Type: application/json; charset=utf-8');
@@ -5530,6 +5666,7 @@ if ($op === 'render_budget_table') {
 		ob_start();
 		echo '<div class="pm-budget-report-mode">';
 		pm_render_budget_plan_actual_summary($budgetReportData);
+		pm_render_budget_source_summary_box($db_Project, $project_id, $budgetReportData);
 		pm_render_budget_expense_report_table($budgetReportData, $project_id, $report_edit_allowed);
 		pm_render_budget_other_actions_table($db_Project, $db_person, $project_id, $report_edit_allowed);
 		echo '</div>';
@@ -13391,6 +13528,7 @@ if ($op === 'add_project') {
 			padding: 0;
 		}
 		.pm-ber-line-edit-btn,
+		.pm-ber-line-delete-btn,
 		.pm-ber-line-detail-btn{
 			font-size: .72rem;
 			padding: .12rem .45rem;
@@ -14654,6 +14792,8 @@ if ($op === 'add_project') {
 		.pm-wizard.pm-result-report-lock .pm-ber-disburse-btn,
 		.pm-wizard.pm-result-report-lock .pm-budget-disburse-edit,
 		.pm-wizard.pm-result-report-lock .pm-ber-line-edit-btn,
+		.pm-wizard.pm-result-report-lock .pm-budget-disburse-delete,
+		.pm-wizard.pm-result-report-lock .pm-ber-line-delete-btn,
 		.pm-wizard.pm-result-report-lock .pm-budget-other-action-create,
 		.pm-wizard.pm-result-report-lock .pm-budget-other-action-btn,
 		.pm-wizard.pm-result-report-lock #btnOpenProjectEvaluation,
@@ -16150,9 +16290,16 @@ if ($op === 'add_project') {
 							}
 						}
 					}
-					$pm_chg_budget_src = function_exists('pm_format_budget_source_label')
-						? pm_format_budget_source_label($db_Project, $__cbChg, $__boChg)
-						: '';
+					$__joinedChgSrc = function_exists('pm_joined_budget_source_label')
+						? pm_joined_budget_source_label($db_Project, (int)$edit_project_id)
+						: null;
+					if ($__joinedChgSrc !== null && $__joinedChgSrc !== '') {
+						$pm_chg_budget_src = $__joinedChgSrc;
+					} else {
+						$pm_chg_budget_src = function_exists('pm_format_budget_source_label')
+							? pm_format_budget_source_label($db_Project, $__cbChg, $__boChg)
+							: '';
+					}
 					if ($pm_chg_budget_src === '' || $pm_chg_budget_src === '-') {
 						$pm_chg_budget_src = function_exists('resolveProjectBudgetSourceForDisplay')
 							? resolveProjectBudgetSourceForDisplay($db_Project, (int)$edit_project_id)
@@ -21225,10 +21372,8 @@ if ($op === 'add_project') {
 						}
 					}
 				?>
-				<div class="alert mt-3 mb-2 pm-notify-result-card" style="border-color:rgba(34,197,94,.28);background:linear-gradient(180deg,#f0fdf4 0%,#ecfdf5 100%);">
-					<div class="pm-notify-result-title" style="color:#166534;">
-						การอนุมัติโครงการ
-					</div>
+				<details class="alert mt-3 mb-2 pm-notify-result-card pm-stage-fold" open style="border-color:rgba(34,197,94,.28);background:linear-gradient(180deg,#f0fdf4 0%,#ecfdf5 100%);">
+					<summary class="pm-notify-result-title pm-stage-fold-sum" style="color:#166534;">การอนุมัติโครงการ</summary>
 					<?php if (!empty($pm_approve_memo_ready)): ?>
 						<div class="pm-user-fix-confirmed mt-0 mb-0" style="border-color:rgba(34,197,94,.35);">
 							<div class="pm-user-fix-confirmed-head mb-0 pb-0" style="border-bottom:0;">
@@ -21366,7 +21511,7 @@ if ($op === 'add_project') {
 							}
 						?>
 					<?php endif; ?>
-				</div>
+				</details>
 				<?php endif; ?>
 				<?php if (!empty($pm_change_history)): ?>
 				<div class="alert mt-3 mb-2 pm-chg-hist-card" id="pmChangeHistory">
@@ -21410,7 +21555,6 @@ if ($op === 'add_project') {
 								<i class="fa <?= htmlspecialchars($__chIcon, ENT_QUOTES, 'UTF-8') ?>"></i>
 								<?= htmlspecialchars($__chTxt, ENT_QUOTES, 'UTF-8') ?>
 							</span>
-							<span class="text-muted" style="font-size:.82rem;font-weight:650;">ยื่น <?= htmlspecialchars($__chAt !== '' ? $__chAt : '-', ENT_QUOTES, 'UTF-8') ?></span>
 							<?php if ($__chSt === 'approved'): ?>
 								<button type="button"
 									class="btn btn-primary btn-sm font-weight-bold px-3 ml-auto pm-chg-open-memo"
@@ -21419,6 +21563,13 @@ if ($op === 'add_project') {
 									<i class="fa fa-file-alt mr-1"></i> บันทึกข้อความ
 								</button>
 							<?php endif; ?>
+						</div>
+						<div class="pm-review-submitter mt-1 mb-2" style="display:flex;align-items:center;flex-wrap:wrap;gap:.5rem;">
+							<span>
+								<span class="pm-review-submitter-k">ผู้ยื่นเสนอ :</span>
+								<span class="pm-review-submitter-v"><?= htmlspecialchars($__chSubmitter !== '' ? $__chSubmitter : '-', ENT_QUOTES, 'UTF-8') ?></span>
+							</span>
+							<span class="text-muted" style="font-size:.82rem;font-weight:650;">ยื่น <?= htmlspecialchars($__chAt !== '' ? $__chAt : '-', ENT_QUOTES, 'UTF-8') ?></span>
 						</div>
 						<div class="pm-chg-hist-content" data-request-id="<?= (int)($__ch['id'] ?? 0) ?>">
 							<div class="pm-chg-hist-view">
@@ -21512,17 +21663,6 @@ if ($op === 'add_project') {
 						<?php endif; ?>
 						<details class="pm-review-timeline mt-3 pm-hist-fold pm-chg-review-fold" open>
 							<summary class="pm-review-timeline-title pm-hist-fold-sum">การขอเปลี่ยนแปลงโครงการ</summary>
-							<div class="mb-2">
-								<span class="pm-chg-hist-status-k">สถานะ :</span>
-								<span class="pm-notify-result-badge <?= htmlspecialchars($__chBadge, ENT_QUOTES, 'UTF-8') ?>">
-									<i class="fa <?= htmlspecialchars($__chIcon, ENT_QUOTES, 'UTF-8') ?>"></i>
-									<?= htmlspecialchars($__chTxt, ENT_QUOTES, 'UTF-8') ?>
-								</span>
-							</div>
-							<div class="pm-review-submitter">
-								<span class="pm-review-submitter-k">ผู้ยื่นเสนอ :</span>
-								<span class="pm-review-submitter-v"><?= htmlspecialchars($__chSubmitter !== '' ? $__chSubmitter : '-', ENT_QUOTES, 'UTF-8') ?></span>
-							</div>
 							<div class="pm-review-timeline-title">ลำดับการตรวจสอบ</div>
 							<?php if (empty($__chReviewRows)): ?>
 								<div class="text-muted py-1" style="font-size:.86rem;">ยังไม่มีลำดับผู้รับรองคำขอเปลี่ยนแปลง</div>
@@ -26024,7 +26164,7 @@ if ($op === 'add_project') {
 				var freezeResults = !!(window.PM_CAN_FILL_PROJECT_RESULTS && (window.PM_RESULT_REPORT_LOCKED || window.PM_RESULT_REPORT_COMPLETE));
 				if (!window.PM_CAN_FILL_PROJECT_RESULTS || freezeResults) {
 					selectors = selectors.concat([
-						'.pm-budget-disburse-open', '.pm-ber-disburse-btn', '.pm-budget-disburse-edit', '.pm-ber-line-edit-btn', '.pm-budget-other-action-create',
+						'.pm-budget-disburse-open', '.pm-ber-disburse-btn', '.pm-budget-disburse-edit', '.pm-ber-line-edit-btn', '.pm-budget-disburse-delete', '.pm-ber-line-delete-btn', '.pm-budget-other-action-create',
 						'.btn-kpi-fill-result', '.btn-kpi-edit-result', '.btn-activity-fill-result', '.btn-activity-edit-result',
 						'#btnOpenProjectEvaluation', '#btnSaveProjectEvaluation'
 					]);
@@ -26103,11 +26243,11 @@ if ($op === 'add_project') {
 				'[data-action="budget-items"]', '[data-action="budget-item-edit"]', '[data-action="budget-item-del"]', '[data-action="budget-plan"]',
 				'[data-action="open-s6-modal"]',
 				'#btnS7OpenUpload', '.pm-s7-file-delete',
-				'.pm-budget-disburse-open', '.pm-ber-disburse-btn', '.pm-budget-disburse-edit', '.pm-ber-line-edit-btn', '.pm-budget-other-action-create',
+				'.pm-budget-disburse-open', '.pm-ber-disburse-btn', '.pm-budget-disburse-edit', '.pm-ber-line-edit-btn', '.pm-budget-disburse-delete', '.pm-ber-line-delete-btn', '.pm-budget-other-action-create',
 				'#btnModalSaveGeneral', '#btnSection2ModalSave'
 			].join(','), function(e){
 				if ((window.PM_PLAN_ADMIN || window.PM_UNIT_ADMIN_OWN_EDIT) && !window.PM_INCLUDE_MEETING_LOCK && !window.PM_PLAN_FIX_RESUBMIT_LOCK && !window.PM_OPERATE_REPLY_LOCK) return;
-				var isResultUi = $(this).is('.pm-budget-disburse-open, .pm-ber-disburse-btn, .pm-budget-disburse-edit, .pm-ber-line-edit-btn, .pm-budget-other-action-create');
+				var isResultUi = $(this).is('.pm-budget-disburse-open, .pm-ber-disburse-btn, .pm-budget-disburse-edit, .pm-ber-line-edit-btn, .pm-budget-disburse-delete, .pm-ber-line-delete-btn, .pm-budget-other-action-create');
 				if (window.PM_OPERATE_APPROVED && !isResultUi) {
 					e.preventDefault();
 					e.stopImmediatePropagation();
@@ -27179,6 +27319,63 @@ if ($op === 'add_project') {
 					if (!lineId) return;
 					loadBudgetDisburseModal($btn, actId, label, 'edit', lineId);
 				});
+				$(document).on('click', '.pm-budget-disburse-delete', function(e){
+					e.preventDefault();
+					if (pmBudgetDisburseBlocked()) return;
+					var $btn = $(this);
+					var lineId = parseInt($btn.attr('data-line-id') || '0', 10);
+					var lineLabel = String($btn.attr('data-line-label') || '').trim();
+					var pid = parseInt($('#project_id').val() || '0', 10);
+					if (!lineId || !pid) return;
+					var doDelete = function(){
+						$btn.prop('disabled', true);
+						$.ajax({
+							url: '?page=project_manage&op=delete_budget_disburse_line_ajax',
+							type: 'POST',
+							dataType: 'text',
+							data: { project_id: pid, line_id: lineId }
+						}).done(function(raw){
+							var res = null;
+							try { res = JSON.parse(String(raw || '')); } catch(err) { res = null; }
+							if (res && Number(res.ok) === 1) {
+								if (typeof loadBudgetTable === 'function') loadBudgetTable();
+								if (typeof Swal !== 'undefined') {
+									Swal.fire({ icon: 'success', title: res.msg || 'ลบรายการเบิกจ่ายสำเร็จ', timer: 1400, showConfirmButton: false });
+								}
+							} else {
+								$btn.prop('disabled', false);
+								var errMsg = (res && res.msg) ? res.msg : 'ไม่สามารถลบรายการเบิกจ่ายได้';
+								if (typeof Swal !== 'undefined') {
+									Swal.fire({ icon: 'error', title: errMsg });
+								} else {
+									alert(errMsg);
+								}
+							}
+						}).fail(function(){
+							$btn.prop('disabled', false);
+							if (typeof Swal !== 'undefined') {
+								Swal.fire({ icon: 'error', title: 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้' });
+							} else {
+								alert('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
+							}
+						});
+					};
+					if (typeof Swal !== 'undefined') {
+						Swal.fire({
+							icon: 'warning',
+							title: 'ยืนยันการลบรายการเบิกจ่าย?',
+							text: lineLabel !== '' ? lineLabel : 'ต้องการลบรายการเบิกจ่ายนี้ใช่หรือไม่',
+							showCancelButton: true,
+							confirmButtonColor: '#dc2626',
+							confirmButtonText: 'ลบรายการ',
+							cancelButtonText: 'ยกเลิก'
+						}).then(function(r){
+							if (r && r.isConfirmed) doDelete();
+						});
+					} else if (window.confirm('ยืนยันการลบรายการเบิกจ่าย' + (lineLabel ? ' : ' + lineLabel : '') + ' ?')) {
+						doDelete();
+					}
+				});
 				$('#btnAddBudgetDisburseLine').on('click', function(){
 					addDisburseLine({});
 				});
@@ -27918,7 +28115,7 @@ if ($op === 'add_project') {
 				if (!window.PM_RESULT_REPORT_LOCKED && !window.PM_RESULT_REPORT_COMPLETE) return;
 				$('.pm-wizard').addClass('pm-submitted-lock pm-result-report-lock');
 				$('#btnToggleHeaderEdit, .pm-save-btn').addClass('d-none');
-				$('.btn-kpi-fill-result, .btn-kpi-edit-result, .btn-activity-fill-result, .btn-activity-edit-result, .pm-budget-disburse-open, .pm-ber-disburse-btn, .pm-budget-disburse-edit, .pm-ber-line-edit-btn, .pm-budget-other-action-create, .pm-budget-other-action-btn, #btnOpenProjectEvaluation, #btnSaveProjectEvaluation').prop('disabled', true).addClass('pm-result-report-locked');
+				$('.btn-kpi-fill-result, .btn-kpi-edit-result, .btn-activity-fill-result, .btn-activity-edit-result, .pm-budget-disburse-open, .pm-ber-disburse-btn, .pm-budget-disburse-edit, .pm-ber-line-edit-btn, .pm-budget-disburse-delete, .pm-ber-line-delete-btn, .pm-budget-other-action-create, .pm-budget-other-action-btn, #btnOpenProjectEvaluation, #btnSaveProjectEvaluation').prop('disabled', true).addClass('pm-result-report-locked');
 				if (typeof lockAddEditButtons === 'function') {
 					lockAddEditButtons();
 				}
@@ -30068,10 +30265,10 @@ if ($op === 'add_project') {
 			var lines = [];
 			if (t.indexOf('\n') >= 0) {
 				t.split('\n').forEach(function(s){ s = String(s || '').trim(); if (s) lines.push(s); });
-			} else if (/\s*\/\s*/.test(t) && t.split(/\s*\/\s*/).filter(function(s){ return String(s||'').trim() !== ''; }).length > 1) {
-				t.split(/\s*\/\s*/).forEach(function(s){ s = String(s || '').trim(); if (s) lines.push(s); });
+			} else if (/\s+\/\s+/.test(t) && t.split(/\s+\/\s+/).filter(function(s){ return String(s||'').trim() !== ''; }).length > 1) {
+				t.split(/\s+\/\s+/).forEach(function(s){ s = String(s || '').trim(); if (s) lines.push(s); });
 			} else {
-				return t;
+				return (t === '-' || t.indexOf('- ') === 0) ? t : ('- ' + t.replace(/^[- \t]+/, ''));
 			}
 			if (lines.length <= 1) return lines[0] || t;
 			return lines.map(function(s){ return (String(s).indexOf('- ') === 0) ? s : ('- ' + String(s).replace(/^[- \t]+/, '')); }).join('\n');
