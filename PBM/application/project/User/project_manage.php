@@ -2179,8 +2179,15 @@ if (!function_exists('pm_collect_project_budget_report_data')) {
                 $editPayload['project_activity_id'] = $actId;
                 $editPayload['project_activity_budget_id'] = $itemId;
                 $editPayload['budget_item'] = $budgetDescVal;
+                $planPayload = array_merge([
+                    'activity_id' => $actId,
+                    'project_activity_budget_id' => $itemId,
+                    'project_budget_detail_id' => (int)($itemPlan['id'] ?? 0),
+                    'item_total' => $estimate,
+                ], $itemPlanMonths);
                 $itemRows[] = [
                     'edit_payload' => $editPayload,
+                    'plan_payload' => $planPayload,
                     'id' => $itemId,
 					'budget_no' => (string)($it['budget_no'] ?? ''),
 					'name' => $it_name,
@@ -2880,6 +2887,25 @@ if (!function_exists('pm_render_budget_expense_report_table')) {
 										<span class="pm-ber-act-badge">กิจกรรม <?= htmlspecialchars($actNoShow, ENT_QUOTES, 'UTF-8') ?></span>
 										<span class="pm-ber-act-name"><?= htmlspecialchars((string)($act['activity_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></span>
 									</div>
+									<?php if (!empty($data['allow_structure_edit'])): ?>
+										<?php
+											$__nextNo = count($items) + 1;
+											foreach ($items as $__itNoRow) {
+												$__bn = (int)($__itNoRow['budget_no'] ?? 0);
+												if ($__bn >= $__nextNo) {
+													$__nextNo = $__bn + 1;
+												}
+											}
+										?>
+										<div class="mt-1">
+											<button type="button" class="btn btn-sm btn-primary pm-budget-addbtn"
+												data-action="budget-items"
+												data-activity-id="<?= $actId ?>"
+												data-next-no="<?= (int)$__nextNo ?>">
+												<i class="fa fa-plus mr-1"></i> เพิ่มรายการค่าใช้จ่าย
+											</button>
+										</div>
+									<?php endif ?>
 								</td>
 								<td class="text-center"><span class="pm-ber-money"><?= htmlspecialchars($fmt($actEst), ENT_QUOTES, 'UTF-8') ?></span></td>
 								<td class="text-center">
@@ -2917,6 +2943,14 @@ if (!function_exists('pm_render_budget_expense_report_table')) {
                                         <button type="button" class="btn btn-link p-0 pm-inline-act pm-inline-act-edit" data-action="budget-item-edit"
                                             data-item="<?= htmlspecialchars(json_encode($it['edit_payload'], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>">
                                             <i class="fa fa-pen" aria-hidden="true"></i><span class="pm-item-edit-label">แก้ไข</span>
+                                        </button>
+                                    <?php endif ?>
+                                    <?php if (!empty($data['allow_structure_edit']) && !empty($it['plan_payload'])): ?>
+                                        <button type="button" class="btn btn-sm btn-light ml-2 pm-ber-plan-btn" data-action="budget-plan"
+                                            data-plan="<?= htmlspecialchars(json_encode($it['plan_payload'], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>"
+                                            style="font-size:.74rem;padding:.12rem .45rem;border:1px solid #cbd5e1;"
+                                            title="แก้ไขแผนการใช้จ่ายรายเดือน">
+                                            <i class="fa fa-calendar-alt mr-1" aria-hidden="true"></i>แผนการใช้จ่ายรายเดือน
                                         </button>
                                     <?php endif ?>
 									<?php if (!empty($it['calc'])): ?>
@@ -2978,6 +3012,14 @@ if (!function_exists('pm_render_budget_expense_report_table')) {
                                         <button type="button" class="btn btn-link p-0 pm-inline-act pm-inline-act-edit" data-action="budget-item-edit"
                                             data-item="<?= htmlspecialchars(json_encode($it['edit_payload'], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>">
                                             <i class="fa fa-pen" aria-hidden="true"></i><span class="pm-item-edit-label">แก้ไข</span>
+                                        </button>
+                                    <?php endif ?>
+                                    <?php if (!empty($data['allow_structure_edit']) && !empty($it['plan_payload'])): ?>
+                                        <button type="button" class="btn btn-sm btn-light ml-2 pm-ber-plan-btn" data-action="budget-plan"
+                                            data-plan="<?= htmlspecialchars(json_encode($it['plan_payload'], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>"
+                                            style="font-size:.74rem;padding:.12rem .45rem;border:1px solid #cbd5e1;"
+                                            title="แก้ไขแผนการใช้จ่ายรายเดือน">
+                                            <i class="fa fa-calendar-alt mr-1" aria-hidden="true"></i>แผนการใช้จ่ายรายเดือน
                                         </button>
                                     <?php endif ?>
 									<?php if (!empty($it['calc'])): ?>
@@ -4147,7 +4189,7 @@ if ($op === 'save_activity_budget_plan_ajax') {
 		echo json_encode(['ok' => 0, 'msg' => 'สถานะโครงการนี้ไม่อนุญาตให้แก้ไข'], JSON_UNESCAPED_UNICODE);
 		exit;
 	}
-	if (pm_plan_restricts_like_user($status_now, $notify_result_now)) {
+	if (!(defined('PLAN_ADMIN') && PLAN_ADMIN) && pm_plan_restricts_like_user($status_now, $notify_result_now)) {
 		echo json_encode(['ok' => 0, 'msg' => 'โหมดแผนปฏิบัติการ ไม่อนุญาตแก้ไขแผนการใช้จ่ายรายเดือน'], JSON_UNESCAPED_UNICODE);
 		exit;
 	}
@@ -14833,7 +14875,7 @@ if ($op === 'add_project') {
 		.pm-wizard.pm-annual-plan-partial-lock .btn-kpi-goal-delete,
 		.pm-wizard.pm-annual-plan-partial-lock button[data-target="#modalConsistencyAdd"],
 		.pm-wizard.pm-annual-plan-partial-lock [data-action="open-s6-modal"],
-		.pm-wizard.pm-annual-plan-partial-lock [data-action="budget-plan"]{
+		.pm-wizard.pm-annual-plan-partial-lock:not(.pm-admin-activity-budget-edit) [data-action="budget-plan"]{
 			display: none !important;
 		}
 		#modalGeneralInfo .modal-header { border-bottom: 1px solid #e8def2; padding: 0.75rem 1rem; }
@@ -26128,7 +26170,11 @@ if ($op === 'add_project') {
 				// ส่วนที่ 2 ความสอดคล้อง / ส่วนที่ 6: ไม่อนุญาตแก้ไข
 				$('button[data-target="#modalConsistencyAdd"]').addClass('d-none').prop('disabled', true);
 				$('[data-action="open-s6-modal"]').prop('disabled', true).addClass('disabled');
-				$('[data-action="budget-plan"]').prop('disabled', true).addClass('disabled');
+				if (window.PM_PLAN_ADMIN || window.PM_ADMIN_EDIT_ACTIVITY_BUDGET) {
+					$('[data-action="budget-plan"]').prop('disabled', false).removeClass('disabled pm-lock-disabled d-none');
+				} else {
+					$('[data-action="budget-plan"]').prop('disabled', true).addClass('disabled');
+				}
 
 				// ส่วนที่ 4/5/7: อนุญาตเพิ่ม-แก้ไขกิจกรรม, รายการค่าใช้จ่าย และไฟล์
 				$('#btnAddActivityTop, .pm-activity-edit, .pm-activity-del, [data-action="budget-items"], [data-action="budget-item-edit"], [data-action="budget-item-del"], #btnS7OpenUpload, .pm-s7-file-delete')
@@ -26265,7 +26311,8 @@ if ($op === 'add_project') {
 					return;
 				}
 				if (isPlanWorkflowEditable) {
-					if ($(this).is('button[data-target="#modalConsistencyAdd"], [data-kpi-goal-action], [data-action="open-s6-modal"], [data-action="budget-plan"]')) {
+					if ($(this).is('button[data-target="#modalConsistencyAdd"], [data-kpi-goal-action], [data-action="open-s6-modal"]')
+						|| ($(this).is('[data-action="budget-plan"]') && !window.PM_PLAN_ADMIN && !window.PM_ADMIN_EDIT_ACTIVITY_BUDGET)) {
 						e.preventDefault();
 						e.stopImmediatePropagation();
 						return false;
@@ -26291,7 +26338,7 @@ if ($op === 'add_project') {
 				'#formProjectFilesUpload'
 			].join(','), function(e){
 				if ((window.PM_PLAN_ADMIN || window.PM_UNIT_ADMIN_OWN_EDIT) && !window.PM_INCLUDE_MEETING_LOCK && !window.PM_PLAN_FIX_RESUBMIT_LOCK && !window.PM_OPERATE_REPLY_LOCK) return;
-				if (isPlanWorkflowEditable && (this.id === 'formSection6' || this.id === 'formKpiGoalProject' || this.id === 'formBudgetPlan')) {
+				if (isPlanWorkflowEditable && (this.id === 'formSection6' || this.id === 'formKpiGoalProject' || (this.id === 'formBudgetPlan' && !window.PM_PLAN_ADMIN && !window.PM_ADMIN_EDIT_ACTIVITY_BUDGET))) {
 					e.preventDefault();
 					e.stopImmediatePropagation();
 					return false;
@@ -28844,7 +28891,7 @@ if ($op === 'add_project') {
 				pmUpdateBudgetPlanSummary();
 			});
 			$(document).on('click', '[data-action="budget-plan"]', function(e){
-				if (isSubmittedNow() && !window.PM_ADMIN_EDIT_ACTIVITY_BUDGET) { e.preventDefault(); return; }
+				if (isSubmittedNow() && !window.PM_PLAN_ADMIN && !window.PM_ADMIN_EDIT_ACTIVITY_BUDGET) { e.preventDefault(); return; }
 				e.preventDefault();
 				var raw = $(this).attr('data-plan') || '{}';
 				var p = {};
@@ -32752,6 +32799,29 @@ if ($op === 'add_project') {
 			if (err === '' && out.length === 0) err = 'กรุณาระบุผู้รับรองโครงการอย่างน้อย 1 คน';
 			return { ok: err === '' && out.length > 0, err: err, rows: out };
 		}
+		window.pmBudgetSrcNormalize = window.pmBudgetSrcNormalize || function(text){
+			var t = String(text == null ? '' : text).replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+			if (!t) return '-';
+			t = t.replace(/\.00(?=\s*บาท)/g, '');
+			var lines = [];
+			if (t.indexOf('\n') >= 0) {
+				t.split('\n').forEach(function(s){ s = String(s || '').trim(); if (s) lines.push(s); });
+			} else if (/\s+\/\s+/.test(t) && t.split(/\s+\/\s+/).filter(function(s){ return String(s||'').trim() !== ''; }).length > 1) {
+				t.split(/\s+\/\s+/).forEach(function(s){ s = String(s || '').trim(); if (s) lines.push(s); });
+			} else {
+				return (t === '-' || t.indexOf('- ') === 0) ? t : ('- ' + t.replace(/^[- \t]+/, ''));
+			}
+			if (lines.length <= 1) return lines[0] || t;
+			return lines.map(function(s){ return (String(s).indexOf('- ') === 0) ? s : ('- ' + String(s).replace(/^[- \t]+/, '')); }).join('\n');
+		};
+		window.pmBudgetSrcHtml = window.pmBudgetSrcHtml || function(text){
+			return $('<div/>').text(window.pmBudgetSrcNormalize(text)).html().replace(/\n/g, '<br>');
+		};
+		window.pmBudgetSrcSet = window.pmBudgetSrcSet || function(sel, text){
+			var $el = (sel && sel.jquery) ? sel : $(sel);
+			if (!$el.length) return;
+			$el.css('white-space', 'pre-line').css('line-height', '1.45').html(window.pmBudgetSrcHtml(text));
+		};
 		function pmRoMemoFillFromBtn($btn) {
 			var unit = $btn.attr('data-memo-unit') || '-';
 			$('#pmRoMemoProjectId').val($btn.attr('data-id') || '0');
@@ -35782,6 +35852,29 @@ if ($is_unit_admin) {
 		if (err === '' && out.length === 0) err = 'กรุณาระบุผู้รับรองโครงการอย่างน้อย 1 คน';
 		return { ok: err === '' && out.length > 0, err: err, rows: out };
 	}
+	window.pmBudgetSrcNormalize = window.pmBudgetSrcNormalize || function(text){
+		var t = String(text == null ? '' : text).replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+		if (!t) return '-';
+		t = t.replace(/\.00(?=\s*บาท)/g, '');
+		var lines = [];
+		if (t.indexOf('\n') >= 0) {
+			t.split('\n').forEach(function(s){ s = String(s || '').trim(); if (s) lines.push(s); });
+		} else if (/\s+\/\s+/.test(t) && t.split(/\s+\/\s+/).filter(function(s){ return String(s||'').trim() !== ''; }).length > 1) {
+			t.split(/\s+\/\s+/).forEach(function(s){ s = String(s || '').trim(); if (s) lines.push(s); });
+		} else {
+			return (t === '-' || t.indexOf('- ') === 0) ? t : ('- ' + t.replace(/^[- \t]+/, ''));
+		}
+		if (lines.length <= 1) return lines[0] || t;
+		return lines.map(function(s){ return (String(s).indexOf('- ') === 0) ? s : ('- ' + String(s).replace(/^[- \t]+/, '')); }).join('\n');
+	};
+	window.pmBudgetSrcHtml = window.pmBudgetSrcHtml || function(text){
+		return $('<div/>').text(window.pmBudgetSrcNormalize(text)).html().replace(/\n/g, '<br>');
+	};
+	window.pmBudgetSrcSet = window.pmBudgetSrcSet || function(sel, text){
+		var $el = (sel && sel.jquery) ? sel : $(sel);
+		if (!$el.length) return;
+		$el.css('white-space', 'pre-line').css('line-height', '1.45').html(window.pmBudgetSrcHtml(text));
+	};
 	function pmRoMemoFillFromBtn($btn) {
 		var unit = $btn.attr('data-memo-unit') || '-';
 		$('#pmRoMemoProjectId').val($btn.attr('data-id') || '0');
