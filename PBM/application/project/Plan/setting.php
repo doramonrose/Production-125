@@ -1409,7 +1409,7 @@ if ($op === '' && isset($_GET['cp'])) {
 																$attachLabel = $attachStored;
 															}
 														?>
-															<li class="exp-item-card<?= $itemOn ? '' : ' is-off' ?>">
+															<li class="exp-item-card<?= $itemOn ? '' : ' is-off' ?>" data-item-id="<?= (int)$expenses_detail['id'] ?>" data-cat-id="<?= (int)$expenses['id'] ?>">
 																<div class="exp-item-head">
 																	<div class="exp-item-name">
 																		<i class="fas fa-file-invoice-dollar text-blue mr-1" aria-hidden="true"></i>
@@ -1428,6 +1428,22 @@ if ($op === '' && isset($_GET['cp'])) {
 																				<i class="fa fa-file-pdf" aria-hidden="true"></i> คลิกดู
 																			</a>
 																		<?php endif; ?>
+																		<button type="button"
+																			class="btn btn-link p-0 icon-btn text-secondary exp-item-move-btn"
+																			data-dir="up"
+																			data-cat-id="<?= (int)$expenses['id'] ?>"
+																			data-id="<?= (int)$expenses_detail['id'] ?>"
+																			title="เลื่อนขึ้น">
+																			<i class="fa fa-arrow-up"></i>
+																		</button>
+																		<button type="button"
+																			class="btn btn-link p-0 icon-btn text-secondary exp-item-move-btn"
+																			data-dir="down"
+																			data-cat-id="<?= (int)$expenses['id'] ?>"
+																			data-id="<?= (int)$expenses_detail['id'] ?>"
+																			title="เลื่อนลง">
+																			<i class="fa fa-arrow-down"></i>
+																		</button>
 																		<label class="mb-0" title="เปิด/ปิดการใช้งาน">
 																			<input type="checkbox" name="status" class="ace-switch"
 																				data-id="<?= (int)$expenses_detail['id'] ?>"
@@ -1984,6 +2000,52 @@ if ($op === '' && isset($_GET['cp'])) {
 				} else if (window.confirm(msg)) {
 					runDel();
 				}
+			}, true);
+			document.addEventListener('click', function(ev){
+				var btn = ev.target.closest ? ev.target.closest('.exp-item-move-btn') : null;
+				if (!btn) return;
+				ev.preventDefault();
+				ev.stopPropagation();
+				var dir = String(btn.getAttribute('data-dir') || '');
+				var catId = String(btn.getAttribute('data-cat-id') || '');
+				var li = btn.closest('li.exp-item-card');
+				if (!li || !li.parentNode) return;
+				var ul = li.parentNode;
+				if (dir === 'up') {
+					var prev = li.previousElementSibling;
+					if (!prev) return;
+					ul.insertBefore(li, prev);
+				} else if (dir === 'down') {
+					var next = li.nextElementSibling;
+					if (!next) return;
+					ul.insertBefore(next, li);
+				} else {
+					return;
+				}
+				var ids = [];
+				ul.querySelectorAll('li.exp-item-card[data-item-id]').forEach(function(el){
+					var v = parseInt(el.getAttribute('data-item-id') || '0', 10);
+					if (v > 0) ids.push(v);
+				});
+				if (!ids.length || !catId) return;
+				var fd = new FormData();
+				fd.append('type', 'reorder_expenses_detail');
+				fd.append('cat_id', catId);
+				fd.append('ids', JSON.stringify(ids));
+				fetch('update_status.php', { method: 'POST', body: fd, credentials: 'same-origin' })
+					.then(function(r){ return r.json(); })
+					.then(function(res){
+						if (!res || Number(res.ok) !== 1) {
+							if (window.Swal && typeof Swal.fire === 'function') {
+								Swal.fire({ icon: 'error', title: 'บันทึกลำดับไม่สำเร็จ' });
+							}
+						}
+					})
+					.catch(function(){
+						if (window.Swal && typeof Swal.fire === 'function') {
+							Swal.fire({ icon: 'error', title: 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้' });
+						}
+					});
 			}, true);
 			document.addEventListener('change', function(ev){
 				var el = ev.target;

@@ -3915,9 +3915,12 @@ if ($op === 'get_expense_detail_ajax') {
 		if (function_exists('ensureSetExpensesDetailAttachSchema')) {
 			ensureSetExpensesDetailAttachSchema($db_Project);
 		}
+		if (function_exists('ensureSetExpensesDetailAttachSchema')) {
+			ensureSetExpensesDetailAttachSchema($db_Project);
+		}
 		$stmt = mysqli_prepare(
 			$db_Project,
-			"SELECT id, name, detail, status FROM set_project_expenses_detail WHERE code_expenses = ? AND status = '1' ORDER BY id ASC"
+			"SELECT id, name, detail, status FROM set_project_expenses_detail WHERE code_expenses = ? AND status = '1' ORDER BY sort_order ASC, id ASC"
 		);
 		if ($stmt) {
 			mysqli_stmt_bind_param($stmt, 's', $code_expenses);
@@ -10436,7 +10439,7 @@ if ($op === 'plan_admin_set_budget_source_ajax') {
 }
 
 if (!function_exists('pm_render_plan_budget_source_editor')) {
-	function pm_render_plan_budget_source_editor(int $projectId, string $code, string $other, array $opts, string $projectYear = '', bool $showOnLeave = false): void
+	function pm_render_plan_budget_source_editor(int $projectId, string $code, string $other, array $opts, string $projectYear = '', bool $showOnLeave = false, bool $showLeaveBadge = true): void
 	{
 		global $db_Project;
 		$optsJson = json_encode(array_values($opts), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
@@ -10448,6 +10451,7 @@ if (!function_exists('pm_render_plan_budget_source_editor')) {
 			<button type="button" class="btn btn-sm btn-outline-primary font-weight-bold" id="btnPmPaBudgetEdit">
 				<i class="fa fa-edit mr-1"></i>แก้ไขแหล่งงบประมาณ
 			</button>
+			<?php if ($showLeaveBadge): ?>
 			<div class="pm-pa-leave-status mt-2" id="pmPaLeaveStatusView">
 				<span class="small font-weight-bold text-muted">ระบบลาราชการ :</span>
 				<?php if (!empty($showOnLeave)): ?>
@@ -10456,6 +10460,7 @@ if (!function_exists('pm_render_plan_budget_source_editor')) {
 					<span class="small text-muted">ไม่แสดง</span>
 				<?php endif; ?>
 			</div>
+			<?php endif; ?>
 			<div id="pmPaBudgetEditBox" class="d-none mt-2 p-2" style="background:#fff;border:1px solid #c4b5fd;border-radius:10px;max-width:760px;">
 				<div class="font-weight-bold mb-1">แหล่งงบประมาณ</div>
 				<label class="small font-weight-bold mb-1" for="pmPaBudgetYear">ปีงบประมาณ</label>
@@ -20603,7 +20608,15 @@ if ($op === 'add_project') {
 						<div class="v">
 							<span class="pm-notify-result-badge <?= htmlspecialchars($pm_notify_badge_cls, ENT_QUOTES, 'UTF-8') ?>">
 								<i class="fa <?= htmlspecialchars($pm_notify_icon, ENT_QUOTES, 'UTF-8') ?>"></i>
-								<?= htmlspecialchars($pm_notify_result_txt !== '' ? $pm_notify_result_txt : '-', ENT_QUOTES, 'UTF-8') ?>
+								<?php
+									$__notifyDisplayTxt = $pm_notify_result_txt !== '' ? $pm_notify_result_txt : '-';
+									if ($__notifyDisplayTxt === 'บรรจุแผน') {
+										$__notifyDisplayTxt = 'เห็นชอบในหลักการ';
+									} elseif ($__notifyDisplayTxt === 'บรรจุแผนและปรับแก้') {
+										$__notifyDisplayTxt = 'เห็นชอบในหลักการและแก้ไข';
+									}
+								?>
+								<?= htmlspecialchars($__notifyDisplayTxt, ENT_QUOTES, 'UTF-8') ?>
 							</span>
 						</div>
 						<?php if ($pm_notify_result_txt !== 'ไม่ผ่านการพิจารณา'): ?>
@@ -20626,7 +20639,8 @@ if ($op === 'add_project') {
 								(string)($pm_plan_budget_other ?? ''),
 								is_array($pm_plan_budget_opts ?? null) ? $pm_plan_budget_opts : [],
 								(string)($years_select ?? ''),
-								!empty($pm_show_on_leave_system)
+								!empty($pm_show_on_leave_system),
+								false
 							);
 						?>
 					<?php endif; ?>
@@ -20729,8 +20743,6 @@ if ($op === 'add_project') {
 										</div>
 										<?php if ($__note !== ''): ?>
 											<div class="pm-review-note"><?= nl2br(htmlspecialchars($__note, ENT_QUOTES, 'UTF-8')) ?></div>
-										<?php else: ?>
-											<div class="pm-review-note pm-review-note-empty text-muted"><small>-</small></div>
 										<?php endif; ?>
 									</div>
 								</div>
@@ -27372,8 +27384,13 @@ if ($op === 'add_project') {
 					var $btn = $(this);
 					var lineId = parseInt($btn.attr('data-line-id') || '0', 10);
 					var lineLabel = String($btn.attr('data-line-label') || '').trim();
-					var pid = parseInt($('#project_id').val() || '0', 10);
-					if (!lineId || !pid) return;
+					var pid = parseInt(projectId || 0, 10) || parseInt($('#edit_project_id').val() || '0', 10) || 0;
+					if (!lineId || !pid) {
+						var missMsg = !pid ? 'ไม่พบรหัสโครงการ' : 'ไม่พบรายการเบิกจ่าย';
+						if (typeof Swal !== 'undefined') Swal.fire({ icon: 'warning', title: missMsg });
+						else alert(missMsg);
+						return;
+					}
 					var doDelete = function(){
 						$btn.prop('disabled', true);
 						$.ajax({
@@ -29622,7 +29639,7 @@ if ($op === 'add_project') {
 			justify-content:center;
 			text-align:center;
 			font-weight:700;
-			font-size:16pt;
+			font-size:24pt;
 			letter-spacing:normal;
 			margin:0;
 			line-height:1.2;
@@ -30735,8 +30752,8 @@ if ($op === 'add_project') {
 
 						<div class="pm-am-body">
 							<div class="pm-am-to"><span class="pm-am-to-label">เรียน</span><span>คณบดีคณะเภสัชศาสตร์</span></div>
-							<div class="pm-am-para">ด้วย <span id="pmChgAmUnitInline">หน่วยงาน</span> ได้รับอนุมัติให้ดำเนินการโครงการ <span id="pmChgAmNameInline">…</span> ประจำปีงบประมาณ พ.ศ. <span id="pmChgAmYearVal">…</span> รหัสโครงการ <span id="pmChgAmCodeVal">-</span> แหล่งงบประมาณ <span id="pmChgAmBudgetSrcVal" style="white-space:pre-line;line-height:1.45;display:inline-block;vertical-align:top;">-</span> วงเงินงบประมาณ <span id="pmChgAmBudgetVal">0</span> บาท</div>
-							<div class="pm-am-para">ในการนี้ <span id="pmChgAmUnitInline2">หน่วยงาน</span> มีความประสงค์ขอเปลี่ยนแปลงรายละเอียดของโครงการ เนื่องจาก <span id="pmChgAmReasonVal">…</span></div>
+							<div class="pm-am-para">ด้วย <span id="pmChgAmUnitInline">หน่วยงาน</span> ได้รับอนุมัติให้ดำเนินการโครงการ <span id="pmChgAmNameInline">…</span> ประจำปีงบประมาณ พ.ศ. <span id="pmChgAmYearVal">…</span> รหัสโครงการ <span id="pmChgAmCodeVal">-</span> แหล่งงบประมาณ <span id="pmChgAmBudgetSrcVal" style="white-space:pre-line;line-height:1.45;display:inline;">-</span> วงเงินงบประมาณ <span id="pmChgAmBudgetVal">0</span> บาท</div>
+							<div class="pm-am-para" id="pmChgAmReasonPara">ในการนี้ <span id="pmChgAmUnitInline2">หน่วยงาน</span> มีความประสงค์ขอเปลี่ยนแปลงรายละเอียดของโครงการ เนื่องจาก <span id="pmChgAmReasonVal">…</span></div>
 							<table class="pm-am-table pm-am-table-cmp">
 								<thead>
 									<tr>
@@ -30751,34 +30768,18 @@ if ($op === 'add_project') {
 							</table>
 							<div class="pm-am-closing">จึงเรียนมาเพื่อโปรดพิจารณาอนุมัติ</div>
 
-							<div class="pm-am-signs">
-								<div class="pm-am-sign-section">
-									<div class="pm-am-sign-heading">เสนอเรื่องเพื่อพิจารณา</div>
-									<div class="pm-am-sign-card">
-										<div class="pm-am-sign-banner">Digitally signed by</div>
-										<div class="pm-am-sign-body">
-											<div class="pm-am-sign-col-sig" id="pmChgAmProposerSigWrap"></div>
-											<div class="pm-am-sign-col-meta">
-												<div class="pm-am-sign-name" id="pmChgAmProposerName">........................</div>
-												<div id="pmChgAmProposerPos">........................</div>
-											</div>
-										</div>
-									</div>
+							<div class="pm-am-signs pm-am-signs-plain">
+								<div class="pm-am-sign-plain">
+									<div id="pmChgAmProposerSigWrap"></div>
+									<div class="pm-am-sign-name" id="pmChgAmProposerName">........................</div>
+									<div class="pm-am-sign-pos" id="pmChgAmProposerPos">หัวหน้าโครงการ</div>
 								</div>
 
-								<div class="pm-am-sign-section">
-									<div class="pm-am-sign-heading">เพื่อพิจารณาอนุมัติ</div>
-									<div class="pm-am-sign-card">
-										<div class="pm-am-approve-word">อนุมัติ</div>
-										<div class="pm-am-sign-banner">Digitally signed by</div>
-										<div class="pm-am-sign-body">
-											<div class="pm-am-sign-col-sig" id="pmChgAmApproverSigWrap"></div>
-											<div class="pm-am-sign-col-meta">
-												<div class="pm-am-sign-name" id="pmChgAmApproverName">........................</div>
-												<div id="pmChgAmApproverPos" data-pos="">........................</div>
-											</div>
-										</div>
-									</div>
+								<div class="pm-am-sign-plain">
+									<div class="pm-am-approve-word">อนุมัติ</div>
+									<div id="pmChgAmApproverSigWrap"></div>
+									<div class="pm-am-sign-name" id="pmChgAmApproverName">........................</div>
+									<div class="pm-am-sign-pos" id="pmChgAmApproverPos" data-pos="">........................</div>
 								</div>
 							</div>
 						</div>
@@ -30881,10 +30882,29 @@ if ($op === 'add_project') {
 			pmChgSetText('pmChgAmCodeVal', data.code, '-');
 			pmBudgetSrcSet('#pmChgAmBudgetSrcVal', data.budget_src || '-');
 			pmChgSetText('pmChgAmBudgetVal', data.budget, '0');
-			pmChgSetText('pmChgAmReasonVal', data.reason, '…');
-			pmChgSetText('pmChgAmProposerName', data.proposer_name, '........................');
+			(function(){
+				$('#pmChgAmPaper .pm-chg-am-reason-extra').remove();
+				var rawReason = String(data.reason || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+				var paras = rawReason ? rawReason.split(/\n+/).map(function(s){ return s.trim(); }).filter(Boolean) : [];
+				pmChgSetText('pmChgAmReasonVal', paras.length ? paras[0] : '…', '…');
+				var $anchor = $('#pmChgAmReasonPara');
+				if ($anchor.length && paras.length > 1) {
+					var $cur = $anchor;
+					for (var pi = 1; pi < paras.length; pi++) {
+						var $p = $('<div class="pm-am-para pm-chg-am-reason-extra"></div>').text(paras[pi]);
+						$cur.after($p);
+						$cur = $p;
+					}
+				}
+			})();
+			var pmChgParenName = function(nm){
+				var s = String(nm || '').trim();
+				if (!s || s === '-' || /^\.+$/.test(s)) return '........................';
+				return s.charAt(0) === '(' ? s : ('(' + s + ')');
+			};
+			pmChgSetText('pmChgAmProposerName', pmChgParenName(data.proposer_name), '........................');
 			pmChgSetText('pmChgAmProposerPos', 'หัวหน้าโครงการ', 'หัวหน้าโครงการ');
-			pmChgSetText('pmChgAmApproverName', data.approver_name, '........................');
+			pmChgSetText('pmChgAmApproverName', pmChgParenName(data.approver_name), '........................');
 			(function(){
 				var el = document.getElementById('pmChgAmApproverPos');
 				if (!el) return;
@@ -31090,7 +31110,14 @@ if ($op === 'add_project') {
 				year: valText('#pmChgAmYearVal'),
 				budget: valText('#pmChgAmBudgetVal'),
 				budget_src: (window.pmBudgetSrcRead ? pmBudgetSrcRead('#pmChgAmBudgetSrcVal', '-') : valText('#pmChgAmBudgetSrcVal')),
-				reason: valText('#pmChgAmReasonVal'),
+				reason: (function(){
+					var parts = [valText('#pmChgAmReasonVal')];
+					$('#pmChgAmPaper .pm-chg-am-reason-extra').each(function(){
+						var t = String($(this).text() || '').trim();
+						if (t) parts.push(t);
+					});
+					return parts.filter(Boolean).join('\n');
+				})(),
 				details_json: JSON.stringify(details),
 				proposer_name: valText('#pmChgAmProposerName'),
 				proposer_pos: 'หัวหน้าโครงการ',

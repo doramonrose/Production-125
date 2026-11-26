@@ -11,6 +11,42 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+if (isset($_POST['type']) && trim((string)$_POST['type']) === 'reorder_expenses_detail') {
+    header('Content-Type: application/json; charset=utf-8');
+    if (function_exists('ensureSetExpensesDetailAttachSchema')) {
+        ensureSetExpensesDetailAttachSchema($db_Project);
+    }
+    $catId = isset($_POST['cat_id']) ? (int)$_POST['cat_id'] : 0;
+    $idsRaw = $_POST['ids'] ?? [];
+    if (!is_array($idsRaw)) {
+        $idsRaw = json_decode((string)$idsRaw, true);
+    }
+    if ($catId <= 0 || !is_array($idsRaw) || empty($idsRaw)) {
+        http_response_code(400);
+        echo json_encode(['ok' => 0, 'msg' => 'missing_param']);
+        exit;
+    }
+    $stmt = $db_Project->prepare("UPDATE set_project_expenses_detail SET sort_order = ? WHERE id = ? AND code_expenses = ?");
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['ok' => 0, 'msg' => 'prepare_failed']);
+        exit;
+    }
+    $order = 1;
+    foreach ($idsRaw as $itemId) {
+        $iid = (int)$itemId;
+        if ($iid <= 0) {
+            continue;
+        }
+        $stmt->bind_param('iii', $order, $iid, $catId);
+        $stmt->execute();
+        $order++;
+    }
+    $stmt->close();
+    echo json_encode(['ok' => 1]);
+    exit;
+}
+
 $id     = isset($_POST['id']) ? (int)$_POST['id'] : 0;
 $status = isset($_POST['status']) ? (int)$_POST['status'] : null;
 $type   = isset($_POST['type']) ? trim((string)$_POST['type']) : '';

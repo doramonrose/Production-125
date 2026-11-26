@@ -6446,7 +6446,7 @@ if ($op === 'save_data_consistency_kpi_project' && ($_SERVER['REQUEST_METHOD'] ?
 																					<label class="font-weight-bold">ประเภทค่าใช้จ่าย <span class="text-danger">*</span></label>
 																					<select id="edit_code_expenses_detail<?= $budget_item['id']; ?>" name="code_expenses_detail" class="form-control" required>
 																						<?php
-																						$sub_sql = "SELECT * FROM set_project_expenses_detail WHERE code_expenses = '{$budget_item['code_expenses']}' ORDER BY id ASC";
+																						$sub_sql = "SELECT * FROM set_project_expenses_detail WHERE code_expenses = '{$budget_item['code_expenses']}' ORDER BY sort_order ASC, id ASC";
 																						$sub_res = mysqli_query($db_Project, $sub_sql);
 																						while ($sub = mysqli_fetch_assoc($sub_res)) {
 																							$selected = ($budget_item['code_expenses_detail'] == $sub['id']) ? 'selected' : '';

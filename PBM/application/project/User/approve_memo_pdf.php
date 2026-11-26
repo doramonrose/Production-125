@@ -361,6 +361,10 @@ $esignFooter = function_exists('pm_approve_memo_esign_footer_text')
 $mpdf->SetDisplayMode('fullpage');
 $mpdf->shrink_tables_to_fit = 1;
 $mpdf->keep_table_proportions = true;
+// คุมการจัดชิดขอบ (justify) ภาษาไทย: ไม่ยืดระยะห่างระหว่างตัวอักษร
+$mpdf->jSWord = 0.4;
+$mpdf->jSmaxChar = 0;
+$mpdf->jSmaxCharLast = 0;
 if ($esignFooter !== '') {
 	$mpdf->SetHTMLFooter(
 		'<div style="font-family:sarabun;font-size:7.5pt;line-height:1.3;color:#333;text-align:left;">'
@@ -379,11 +383,11 @@ foreach ($details as $drow) {
 	}
 	$orig = trim((string)($drow['original'] ?? ''));
 	$chg = trim((string)($drow['changed'] ?? ''));
-	$detailsRowsHtml .= '<tr>' . $td18((string)$di, 'width="40" align="center"') . $td18(nl2br($h($orig !== '' ? $orig : '-'))) . $td18(nl2br($h($chg !== '' ? $chg : '-'))) . '</tr>';
+	$detailsRowsHtml .= '<tr>' . $td18((string)$di, 'width="58" align="center"') . $td18(nl2br($h($orig !== '' ? $orig : '-'))) . $td18(nl2br($h($chg !== '' ? $chg : '-'))) . '</tr>';
 	$di++;
 }
 if ($detailsRowsHtml === '') {
-	$detailsRowsHtml = '<tr>' . $td18('1', 'width="40" align="center"') . $td18('-') . $td18('-') . '</tr>';
+	$detailsRowsHtml = '<tr>' . $td18('1', 'width="58" align="center"') . $td18('-') . $td18('-') . '</tr>';
 }
 
 $signHtmlChange = '
@@ -478,27 +482,47 @@ $signHtmlOperate = '
 </table>
 ';
 
-$signHtml = ($memo_type === 'change') ? $signHtmlChange : $signHtmlOperate;
+$signHtml = $signHtmlOperate;
 
 $subjectLine = ($memo_type === 'change')
 	? ('ขออนุมัติเปลี่ยนแปลงโครงการ ' . $h($name !== '' ? $name : '…'))
 	: ('ขออนุมัติดำเนินการโครงการ ' . $h($name !== '' ? $name : '…'));
 
 if ($memo_type === 'change') {
+	$thaiWrap = static function (string $str) use ($h): string {
+		$s = $h($str);
+		$zwsp = '<span style="font-size:0.1pt;"> </span>';
+		// จุดตัดหลัง / ในชื่อแหล่งงบประมาณ
+		$s = str_replace('/', '/' . $zwsp, $s);
+		// จุดตัดหน้าคำไทยพบบ่อย
+		$words = 'ประชาสัมพันธ์|มหาวิทยาลัย|คณะเภสัชศาสตร์|เปลี่ยนแปลง|รายละเอียด|ประสิทธิภาพ|งบประมาณ|ดำเนินการ|สนับสนุน|พิจารณา|โครงการ|หลักสูตร|กิจกรรม|เป้าหมาย|เพิ่มเติม|เนื่องจาก|สำหรับ|รวมถึง|ดังนั้น|อย่าง|อนุมัติ|จำนวน|ความ|การ|และ|หรือ|เพื่อ|ของ|โดย|ซึ่ง|ตาม|จาก|ถึง|ไม่|จึง|ให้|ได้|เป็น|ที่|ใน|มี|จะ';
+		$s = preg_replace('/(?<=[\x{0E01}-\x{0E4E}])(?=(?:' . $words . '))/u', $zwsp, $s);
+		// จุดตัดหน้าสระนำ (เ แ โ ไ ใ) เมื่อตามหลังอักษรไทยที่ไม่ใช่สระนำด้วยกัน
+		$s = preg_replace('/(?<=[\x{0E01}-\x{0E3F}\x{0E47}-\x{0E4C}])(?=[\x{0E40}-\x{0E44}])/u', $zwsp, $s);
+		return $s;
+	};
 	$budgetSrcNorm = function_exists('pm_normalize_budget_source_display_text')
 		? pm_normalize_budget_source_display_text((string)($budget_src !== '' ? $budget_src : '-'))
 		: trim((string)($budget_src !== '' ? $budget_src : '-'));
 	$budgetSrcPara = (strpos($budgetSrcNorm, "\n") !== false)
-		? ('<br>' . nl2br($h($budgetSrcNorm), false) . '<br>')
-		: (' ' . $h($budgetSrcNorm) . ' ');
+		? ('<br>' . nl2br($thaiWrap($budgetSrcNorm), false) . ' ')
+		: (' ' . $thaiWrap($budgetSrcNorm) . ' ');
+	$reasonRaw = trim((string)$reason);
+	$reasonParas = $reasonRaw !== '' ? preg_split('/\r?\n+/', $reasonRaw) : [];
+	$reasonParas = array_values(array_filter(array_map('trim', is_array($reasonParas) ? $reasonParas : []), static function ($s) { return $s !== ''; }));
+	$reasonFirst = !empty($reasonParas) ? $reasonParas[0] : '…';
+	$reasonExtraHtml = '';
+	for ($__ri = 1; $__ri < count($reasonParas); $__ri++) {
+		$reasonExtraHtml .= "\n" . '<div class="para">' . $thaiWrap($reasonParas[$__ri]) . '</div>';
+	}
 	$bodyHtml = '
-<div class="para">ด้วย ' . $h($unitShow) . ' ได้รับอนุมัติให้ดำเนินการโครงการ ' . $h($name !== '' ? $name : '…') . ' ประจำปีงบประมาณ พ.ศ. ' . $h($year !== '' ? $year : '…') . ' รหัสโครงการ ' . $h($code !== '' ? $code : '-') . ' แหล่งงบประมาณ' . $budgetSrcPara . 'วงเงินงบประมาณ ' . $h($budget !== '' ? $budget : '0') . ' บาท</div>
-<div class="para">ในการนี้ ' . $h($unitShow) . ' มีความประสงค์ขอเปลี่ยนแปลงรายละเอียดของโครงการ เนื่องจาก ' . nl2br($h($reason !== '' ? $reason : '…')) . '</div>
+<div class="para">' . $thaiWrap('ด้วย ' . $unitShow . ' ได้รับอนุมัติให้ดำเนินการโครงการ ' . ($name !== '' ? $name : '…') . ' ประจำปีงบประมาณ พ.ศ. ' . ($year !== '' ? $year : '…') . ' รหัสโครงการ ' . ($code !== '' ? $code : '-') . ' แหล่งงบประมาณ') . $budgetSrcPara . $thaiWrap('วงเงินงบประมาณ ' . ($budget !== '' ? $budget : '0') . ' บาท') . '</div>
+<div class="para">' . $thaiWrap('ในการนี้ ' . $unitShow . ' มีความประสงค์ขอเปลี่ยนแปลงรายละเอียดของโครงการ เนื่องจาก ' . $reasonFirst) . '</div>' . $reasonExtraHtml . '
 ';
 	$tableHtml = '
 <table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse; overflow: wrap;">
 <tr>
-	' . $td18('ลำดับ', 'width="40" align="center"') . '
+	' . $td18('ลำดับ', 'width="58" align="center" style="white-space:nowrap;"') . '
 	' . $td18('รายละเอียดเดิม') . '
 	' . $td18('รายละเอียดการเปลี่ยนแปลง') . '
 </tr>
@@ -530,14 +554,14 @@ $html = '
 body { font-family: sarabun; font-size: 10pt; color: #000; line-height: 1.35; }
 table { border-collapse: collapse; }
 .crest td { vertical-align: middle; border: 0; padding: 0; }
-.title { text-align: center; font-weight: bold; font-size: 14pt; line-height: 1.2; }
+.title { text-align: center; font-weight: bold; font-size: 20pt; line-height: 1.2; }
 .meta td { border: 0; padding: 2px 4px 4px 0; vertical-align: bottom; font-size: 10pt; line-height: 1.4; }
 .lbl { font-weight: bold; font-size: 10pt; }
 .val { border-bottom: 0.5pt solid #000; font-size: 10pt; }
 .meta tr.to-line td { padding-top: 12px; }
 .to-val { font-size: 10pt; }
-.para { margin: 8px 0 0; padding: 0; text-indent: 75px; text-align: left; font-size: 10pt; line-height: 1.45; }
-.closing { margin-left: 75px; text-indent: 0; text-align: justify; margin-top: 8px; margin-bottom: 12px; margin-right: 0; font-size: 10pt; line-height: 1.45; }
+.para { margin: 6px 0 0; padding: 0; text-indent: 75px; text-align: justify; font-size: 9.5pt; line-height: 1.4; }
+.closing { margin-left: 75px; text-indent: 0; text-align: justify; margin-top: 8px; margin-bottom: 12px; margin-right: 0; font-size: 9.5pt; line-height: 1.4; }
 .signs td { border: 0; vertical-align: top; padding: 10px 0 6px; font-size: 10pt; }
 .sign-head { font-weight: bold; font-size: 10pt; }
 .banner { background: #000; color: #fff; font-weight: bold; padding: 3px 6px; font-size: 10pt; text-align: center; }
@@ -598,6 +622,229 @@ $filename = ($memo_type === 'change' ? 'บันทึกเปลี่ยน�
 $mpdf->WriteHTML($html);
 $mpdf->WriteHTML('<div style="font-family:sarabun;font-size:9pt;margin:4px 0 8px 0;">' . $tableHtml . '</div>');
 $mpdf->WriteHTML($htmlAfter);
+
+$extraChangeMemos = [];
+if ($isApiMode && $memo_type === 'operate') {
+	if (!empty($PM_APPROVE_MEMO_EXTRA_CHANGES) && is_array($PM_APPROVE_MEMO_EXTRA_CHANGES)) {
+		$extraChangeMemos = $PM_APPROVE_MEMO_EXTRA_CHANGES;
+	} elseif (!empty($GLOBALS['PM_APPROVE_MEMO_EXTRA_CHANGES']) && is_array($GLOBALS['PM_APPROVE_MEMO_EXTRA_CHANGES'])) {
+		$extraChangeMemos = $GLOBALS['PM_APPROVE_MEMO_EXTRA_CHANGES'];
+	}
+}
+if (!empty($extraChangeMemos)) {
+	$thaiWrapChg = static function (string $str) use ($h): string {
+		$s = $h($str);
+		$zwsp = '<span style="font-size:0.1pt;"> </span>';
+		$s = str_replace('/', '/' . $zwsp, $s);
+		$words = 'ประชาสัมพันธ์|มหาวิทยาลัย|คณะเภสัชศาสตร์|เปลี่ยนแปลง|รายละเอียด|ประสิทธิภาพ|งบประมาณ|ดำเนินการ|สนับสนุน|พิจารณา|โครงการ|หลักสูตร|กิจกรรม|เป้าหมาย|เพิ่มเติม|เนื่องจาก|สำหรับ|รวมถึง|ดังนั้น|อย่าง|อนุมัติ|จำนวน|ความ|การ|และ|หรือ|เพื่อ|ของ|โดย|ซึ่ง|ตาม|จาก|ถึง|ไม่|จึง|ให้|ได้|เป็น|ที่|ใน|มี|จะ';
+		$s = preg_replace('/(?<=[\x{0E01}-\x{0E4E}])(?=(?:' . $words . '))/u', $zwsp, $s);
+		$s = preg_replace('/(?<=[\x{0E01}-\x{0E3F}\x{0E47}-\x{0E4C}])(?=[\x{0E40}-\x{0E44}])/u', $zwsp, $s);
+		return $s;
+	};
+	$sigCache = [];
+	if ($proposer_sig !== '' && $proposerSigImg !== '') {
+		$sigCache[$proposer_sig] = $proposerSigImg;
+	}
+	if ($approver_sig !== '' && $approverSigImg !== '') {
+		$sigCache[$approver_sig] = $approverSigImg;
+	}
+	$resolveSigCached = static function ($url) use (&$sigCache, $fetchImgLocal) {
+		$url = trim((string)$url);
+		if ($url === '') {
+			return '';
+		}
+		if (!array_key_exists($url, $sigCache)) {
+			$sigCache[$url] = $fetchImgLocal($url);
+		}
+		return $sigCache[$url];
+	};
+
+	foreach ($extraChangeMemos as $chgData) {
+		if (!is_array($chgData)) {
+			continue;
+		}
+		$chgReqId = (int)($chgData['request_id'] ?? 0);
+		$chgDept = trim((string)($chgData['dept'] ?? $dept));
+		if ($chgDept === '') {
+			$chgDept = $dept;
+		}
+		$chgDocNo = trim((string)($chgData['doc_no'] ?? $doc_no));
+		if ($chgDocNo === '') {
+			$chgDocNo = $doc_no;
+		}
+		$chgDocNo = preg_replace('#\s*/+\s*#', '/', $chgDocNo);
+		$chgDate = trim((string)($chgData['date'] ?? ''));
+		if ($chgDate === '') {
+			$chgDate = '....................';
+		}
+		$chgUnit = trim((string)($chgData['unit'] ?? $unitShow));
+		if ($chgUnit === '' || $chgUnit === '-') {
+			$chgUnit = $unitShow;
+		}
+		$chgCode = trim((string)($chgData['code'] ?? $code));
+		if ($chgCode === '') {
+			$chgCode = $code;
+		}
+		$chgName = trim((string)($chgData['name'] ?? $name));
+		if ($chgName === '') {
+			$chgName = $name;
+		}
+		$chgYear = trim((string)($chgData['year'] ?? $year));
+		if ($chgYear === '') {
+			$chgYear = $year;
+		}
+		$chgBudget = trim((string)($chgData['budget'] ?? $budget));
+		if ($chgBudget === '') {
+			$chgBudget = '0';
+		}
+		$chgBudgetSrc = trim((string)($chgData['budget_src'] ?? $budget_src));
+		$chgBudgetSrcNorm = function_exists('pm_normalize_budget_source_display_text')
+			? pm_normalize_budget_source_display_text($chgBudgetSrc !== '' ? $chgBudgetSrc : '-')
+			: ($chgBudgetSrc !== '' ? $chgBudgetSrc : '-');
+		$chgBudgetSrcPara = (strpos($chgBudgetSrcNorm, "\n") !== false)
+			? ('<br>' . nl2br($thaiWrapChg($chgBudgetSrcNorm), false) . ' ')
+			: (' ' . $thaiWrapChg($chgBudgetSrcNorm) . ' ');
+
+		$chgReasonRaw = trim((string)($chgData['reason'] ?? ''));
+		$chgReasonParas = $chgReasonRaw !== '' ? preg_split('/\r?\n+/', $chgReasonRaw) : [];
+		$chgReasonParas = array_values(array_filter(array_map('trim', is_array($chgReasonParas) ? $chgReasonParas : []), static function ($s) { return $s !== ''; }));
+		$chgReasonFirst = !empty($chgReasonParas) ? $chgReasonParas[0] : '…';
+		$chgReasonExtraHtml = '';
+		for ($__cri = 1; $__cri < count($chgReasonParas); $__cri++) {
+			$chgReasonExtraHtml .= "\n" . '<div class="para">' . $thaiWrapChg($chgReasonParas[$__cri]) . '</div>';
+		}
+
+		$chgDetailsRaw = json_decode((string)($chgData['details_json'] ?? '[]'), true);
+		$chgDetails = is_array($chgDetailsRaw) ? $chgDetailsRaw : [];
+		$chgDetailsRowsHtml = '';
+		$cdi = 1;
+		foreach ($chgDetails as $cdrow) {
+			if (!is_array($cdrow)) {
+				continue;
+			}
+			$cOrig = trim((string)($cdrow['original'] ?? ''));
+			$cChg = trim((string)($cdrow['changed'] ?? ''));
+			$chgDetailsRowsHtml .= '<tr>' . $td18((string)$cdi, 'width="58" align="center"') . $td18(nl2br($h($cOrig !== '' ? $cOrig : '-'))) . $td18(nl2br($h($cChg !== '' ? $cChg : '-'))) . '</tr>';
+			$cdi++;
+		}
+		if ($chgDetailsRowsHtml === '') {
+			$chgDetailsRowsHtml = '<tr>' . $td18('1', 'width="58" align="center"') . $td18('-') . $td18('-') . '</tr>';
+		}
+
+		$chgPropName = trim((string)($chgData['proposer_name'] ?? $proposer_name));
+		$chgPropPos = 'หัวหน้าโครงการ';
+		$chgPropSigImg = $resolveSigCached((string)($chgData['proposer_sig'] ?? $proposer_sig));
+
+		$chgApprName = trim((string)($chgData['approver_name'] ?? ''));
+		$chgApprPos = trim((string)($chgData['approver_pos'] ?? ''));
+		if ($chgApprPos === '') {
+			$chgApprPos = '........................';
+		}
+		$chgApprPosLines = function_exists('pm_memo_approver_pos_lines')
+			? pm_memo_approver_pos_lines($chgApprPos)
+			: [$chgApprPos];
+		$chgApprPosHtml = '';
+		foreach ($chgApprPosLines as $__capl) {
+			$chgApprPosHtml .= ($chgApprPosHtml !== '' ? '<br>' : '') . $h($__capl);
+		}
+		$chgApprSigImg = $resolveSigCached((string)($chgData['approver_sig'] ?? ''));
+
+		$chgSignHtml = '
+<table class="signs-plain" width="100%">
+<tr>
+	<td width="50%">&nbsp;</td>
+	<td width="50%" class="sign-right">' .
+		$pdfSignLines(
+			$chgPropSigImg !== '' ? '<img class="sig-img" src="' . $h($chgPropSigImg) . '" alt="" />' : '',
+			$h($pmPdfParenName($chgPropName)),
+			$h($chgPropPos)
+		) . '
+	</td>
+</tr>
+<tr>
+	<td width="50%">&nbsp;</td>
+	<td width="50%" class="sign-right" style="padding-top:14px;">' .
+		$pdfSignLines(
+			$chgApprSigImg !== '' ? '<img class="sig-img" src="' . $h($chgApprSigImg) . '" alt="" />' : '',
+			$h($pmPdfParenName($chgApprName)),
+			$chgApprPosHtml !== '' ? $chgApprPosHtml : $h('........................'),
+			true
+		) . '
+	</td>
+</tr>
+</table>
+';
+
+		$chgEsignRef = '';
+		if (function_exists('pm_get_or_create_approve_memo_esign_ref')) {
+			$chgEsignRef = pm_get_or_create_approve_memo_esign_ref($db_Project, $project_id, (string)$chgCode, 'change', $chgReqId);
+		}
+		$chgEsignFooter = function_exists('pm_approve_memo_esign_footer_text')
+			? pm_approve_memo_esign_footer_text($chgEsignRef)
+			: '';
+
+		$mpdf->AddPage();
+		if ($chgEsignFooter !== '') {
+			$mpdf->SetHTMLFooter(
+				'<div style="font-family:sarabun;font-size:7.5pt;line-height:1.3;color:#333;text-align:left;">'
+				. htmlspecialchars($chgEsignFooter, ENT_QUOTES, 'UTF-8')
+				. '</div>'
+			);
+		} else {
+			$mpdf->SetHTMLFooter('');
+		}
+
+		$chgHeadHtml = '
+<table class="crest" width="100%">
+<tr>
+	<td width="90">' . ($krutSrc !== '' ? '<img src="' . $h($krutSrc) . '" width="80" height="80" alt="" />' : '') . '</td>
+	<td class="title">บันทึกข้อความ</td>
+	<td width="90">&nbsp;</td>
+</tr>
+</table>
+
+<table class="meta" width="100%">
+<tr>
+	<td class="lbl" width="75"><b>ส่วนงาน</b></td>
+	<td class="val" colspan="3">' . $h($chgDept) . '</td>
+</tr>
+<tr>
+	<td class="lbl" width="75"><b>ที่</b></td>
+	<td class="val" width="220">' . $h($chgDocNo) . '</td>
+	<td class="lbl" width="50"><b>วันที่</b></td>
+	<td class="val">' . $h($chgDate) . '</td>
+</tr>
+<tr>
+	<td class="lbl" width="75" style="vertical-align:top;"><b>เรื่อง</b></td>
+	<td class="val" colspan="3" style="vertical-align:top;">ขออนุมัติเปลี่ยนแปลงโครงการ ' . $h($chgName !== '' ? $chgName : '…') . '</td>
+</tr>
+<tr class="to-line">
+	<td class="lbl" width="75"><b>เรียน</b></td>
+	<td class="to-val" colspan="3">คณบดีคณะเภสัชศาสตร์</td>
+</tr>
+</table>
+<div class="para">' . $thaiWrapChg('ด้วย ' . $chgUnit . ' ได้รับอนุมัติให้ดำเนินการโครงการ ' . ($chgName !== '' ? $chgName : '…') . ' ประจำปีงบประมาณ พ.ศ. ' . ($chgYear !== '' ? $chgYear : '…') . ' รหัสโครงการ ' . ($chgCode !== '' ? $chgCode : '-') . ' แหล่งงบประมาณ') . $chgBudgetSrcPara . $thaiWrapChg('วงเงินงบประมาณ ' . $chgBudget . ' บาท') . '</div>
+<div class="para">' . $thaiWrapChg('ในการนี้ ' . $chgUnit . ' มีความประสงค์ขอเปลี่ยนแปลงรายละเอียดของโครงการ เนื่องจาก ' . $chgReasonFirst) . '</div>' . $chgReasonExtraHtml;
+
+		$chgTableHtml = '
+<table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse; overflow: wrap;">
+<tr>
+	' . $td18('ลำดับ', 'width="58" align="center" style="white-space:nowrap;"') . '
+	' . $td18('รายละเอียดเดิม') . '
+	' . $td18('รายละเอียดการเปลี่ยนแปลง') . '
+</tr>
+' . $chgDetailsRowsHtml . '
+</table>
+';
+		$chgAfterHtml = '
+<div class="closing">จึงเรียนมาเพื่อโปรดพิจารณาอนุมัติ</div>
+' . $chgSignHtml;
+
+		$mpdf->WriteHTML($chgHeadHtml);
+		$mpdf->WriteHTML('<div style="font-family:sarabun;font-size:9pt;margin:4px 0 8px 0;">' . $chgTableHtml . '</div>');
+		$mpdf->WriteHTML($chgAfterHtml);
+	}
+}
 $dest = ($isApiMode && $apiDisposition === 'inline')
 	? \Mpdf\Output\Destination::INLINE
 	: \Mpdf\Output\Destination::DOWNLOAD;

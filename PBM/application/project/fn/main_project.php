@@ -1759,6 +1759,195 @@ if (!function_exists('pm_build_approve_memo_payload_from_db')) {
 	}
 }
 
+if (!function_exists('pm_build_approved_change_memo_payloads_from_db')) {
+	function pm_build_approved_change_memo_payloads_from_db($db_Project, $db_person, $project_id, ?array $pre = null, ?array $baseOperateData = null): array
+	{
+		$project_id = (int)$project_id;
+		if ($project_id <= 0 || !($db_Project instanceof mysqli)) {
+			return [];
+		}
+		if (function_exists('pm_ensure_change_request_schema')) {
+			pm_ensure_change_request_schema($db_Project);
+		}
+		$qReqs = @mysqli_query(
+			$db_Project,
+			"SELECT * FROM project_change_request
+			 WHERE project_id='" . $project_id . "'
+			   AND status='1'
+			   AND req_status='approved'
+			 ORDER BY id ASC"
+		);
+		$rows = [];
+		$reqIds = [];
+		while ($qReqs && ($r = mysqli_fetch_assoc($qReqs))) {
+			$rid = (int)($r['id'] ?? 0);
+			if ($rid > 0) {
+				$rows[] = $r;
+				$reqIds[$rid] = $rid;
+			}
+		}
+		if (empty($rows)) {
+			return [];
+		}
+
+		if (!is_array($baseOperateData)) {
+			$builtBase = function_exists('pm_build_approve_memo_payload_from_db')
+				? pm_build_approve_memo_payload_from_db($db_Project, $db_person, $project_id, $pre)
+				: [];
+			$baseOperateData = (is_array($builtBase) && !empty($builtBase['data']) && is_array($builtBase['data']))
+				? $builtBase['data']
+				: [];
+		}
+
+		$fmtThaiLong = static function ($ts) {
+			if ($ts === false || $ts <= 0) {
+				return '';
+			}
+			$m = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+			$d = (int)date('j', $ts);
+			$mi = (int)date('n', $ts);
+			$y = (int)date('Y', $ts) + 543;
+			return $d . ' ' . $m[max(0, min(11, $mi - 1))] . ' ' . $y;
+		};
+
+		$lastChgAppr = [];
+		$qLastAp = @mysqli_query(
+			$db_Project,
+			"SELECT request_id, staff_id, decided_by_staff_id, decided_at, sort_order
+			 FROM project_change_approver_decision
+			 WHERE request_id IN (" . implode(',', $reqIds) . ")
+			   AND LOWER(TRIM(IFNULL(decision,''))) IN ('approve','approved','1')
+			 ORDER BY request_id ASC, sort_order ASC, id ASC"
+		);
+		while ($qLastAp && ($rLa = mysqli_fetch_assoc($qLastAp))) {
+			$lastChgAppr[(int)($rLa['request_id'] ?? 0)] = $rLa;
+		}
+
+		$pathSigBase = trim((string)($GLOBALS['linkSignPerson'] ?? $GLOBALS['path_sig'] ?? ''));
+		$baseDept = trim((string)($baseOperateData['dept'] ?? ''));
+		$baseDocNo = trim((string)($baseOperateData['doc_no'] ?? ''));
+		$baseUnit = trim((string)($baseOperateData['unit'] ?? 'หน่วยงาน'));
+		if ($baseUnit === '' || $baseUnit === '-') {
+			$baseUnit = 'หน่วยงาน';
+		}
+		$baseCode = trim((string)($baseOperateData['code'] ?? ''));
+		$baseName = trim((string)($baseOperateData['name'] ?? ''));
+		$baseYear = trim((string)($baseOperateData['year'] ?? ''));
+		$baseBudget = trim((string)($baseOperateData['budget'] ?? '0'));
+		$baseBudgetSrc = trim((string)($baseOperateData['budget_src'] ?? '-'));
+		$baseProposerName = trim((string)($baseOperateData['proposer_name'] ?? ''));
+		$baseProposerSig = trim((string)($baseOperateData['proposer_sig'] ?? ''));
+
+		$out = [];
+		foreach ($rows as $row) {
+			$rid = (int)($row['id'] ?? 0);
+			$tsReq = strtotime((string)($row['created_at'] ?? ''));
+			$dateReq = $tsReq ? $fmtThaiLong($tsReq) : '';
+			$snapName = trim((string)($row['project_name'] ?? ''));
+			if ($snapName === '') {
+				$snapName = $baseName;
+			}
+			$snapCode = trim((string)($row['project_code'] ?? ''));
+			if ($snapCode === '') {
+				$snapCode = $baseCode;
+			}
+			$snapSrc = trim((string)($row['budget_source'] ?? ''));
+			if ($snapSrc === '' || $snapSrc === '-') {
+				$snapSrc = $baseBudgetSrc;
+			}
+			if ($snapSrc === '') {
+				$snapSrc = '-';
+			}
+			$snapAmt = (float)($row['budget_amount'] ?? 0);
+			$snapAmtFmt = $snapAmt > 0
+				? number_format($snapAmt, 0, '.', ',')
+				: ($baseBudget !== '' ? $baseBudget : '0');
+
+			$apName = '';
+			$apPos = '';
+			$apSig = '';
+			$la = $lastChgAppr[$rid] ?? null;
+			if (is_array($la)) {
+				$apBy = (int)($la['decided_by_staff_id'] ?? 0);
+				$apSid = $apBy > 0 ? $apBy : (int)($la['staff_id'] ?? 0);
+				if ($apSid > 0 && ($db_person instanceof mysqli)) {
+					$qAp = @mysqli_query(
+						$db_person,
+						"SELECT id, files_sig, position_dean, position_code, prefix_code, fname, lname
+						 FROM staff WHERE id='" . $apSid . "' LIMIT 1"
+					);
+					$rAp = $qAp ? mysqli_fetch_assoc($qAp) : null;
+					if ($rAp) {
+						$apName = function_exists('pm_memo_staff_display_name')
+							? pm_memo_staff_display_name(
+								$db_person,
+								(string)($rAp['prefix_code'] ?? ''),
+								(string)($rAp['fname'] ?? ''),
+								(string)($rAp['lname'] ?? '')
+							)
+							: trim(trim((string)($rAp['fname'] ?? '')) . ' ' . trim((string)($rAp['lname'] ?? '')));
+						$typedChg = '';
+						if (function_exists('pm_chain_entered_position')) {
+							$chgStaff = (int)($la['staff_id'] ?? 0);
+							if ($chgStaff <= 0) {
+								$chgStaff = $apSid;
+							}
+							$typedChg = pm_chain_entered_position((string)($row['approvers_json'] ?? ''), $chgStaff);
+						}
+						if ($typedChg !== '') {
+							$apPos = $typedChg;
+						} else {
+							$pd = trim((string)($rAp['position_dean'] ?? ''));
+							if ($pd !== '' && function_exists('getPositionDean')) {
+								$rpd = getPositionDean($db_person, $pd);
+								if (is_array($rpd) && trim((string)($rpd['name'] ?? '')) !== '') {
+									$apPos = trim((string)$rpd['name']);
+								}
+							}
+						}
+						$sigFile = trim((string)($rAp['files_sig'] ?? ''));
+						if ($sigFile !== '' && function_exists('pm_approve_memo_signature_url')) {
+							$apSig = pm_approve_memo_signature_url($sigFile, $pathSigBase);
+						}
+					}
+				}
+			}
+			if ($apPos === '') {
+				$apPos = 'คณบดีคณะเภสัชศาสตร์';
+			}
+
+			$out[] = [
+				'project_id' => $project_id,
+				'request_id' => $rid,
+				'memo_type' => 'change',
+				'dept' => $baseDept,
+				'doc_no' => $baseDocNo,
+				'date' => $dateReq,
+				'unit' => $baseUnit,
+				'code' => $snapCode,
+				'name' => $snapName,
+				'year' => $baseYear,
+				'budget' => $snapAmtFmt,
+				'budget_src' => function_exists('pm_normalize_budget_source_display_text')
+					? pm_normalize_budget_source_display_text($snapSrc)
+					: $snapSrc,
+				'reason' => trim((string)($row['reason'] ?? '')),
+				'details_json' => (string)($row['details_json'] ?? '[]'),
+				'proposer_name' => $baseProposerName,
+				'proposer_pos' => 'หัวหน้าโครงการ',
+				'proposer_date' => '',
+				'proposer_sig' => $baseProposerSig,
+				'approver_name' => $apName,
+				'approver_pos' => $apPos,
+				'approver_date' => '',
+				'approver_sig' => $apSig,
+			];
+		}
+
+		return $out;
+	}
+}
+
 if (!function_exists('pm_change_active_req_statuses')) {
 	function pm_change_active_req_statuses(): array
 	{
@@ -3490,7 +3679,7 @@ function pm_plan_budget_source_choices($db_connection): array
 
 function getAddBudgetSelect($db_connection)
 {
-	$manage = getPbmBudgetManageList($db_connection, true);
+	$manage = getPbmBudgetManageList($db_connection, false);
 	if (!empty($manage)) {
 		return $manage;
 	}
@@ -3640,11 +3829,14 @@ function getExpensesSelect($db_connection)
 }
 function getSetExpensesDetailList($db_connection, $id, $activeOnly = true)
 {
+    if (function_exists('ensureSetExpensesDetailAttachSchema')) {
+        ensureSetExpensesDetailAttachSchema($db_connection);
+    }
     $id = mysqli_real_escape_string($db_connection, $id); // ป้องกัน SQL Injection
     $statusSql = $activeOnly
         ? "AND status = '1'"
         : "AND (status IS NULL OR status = '' OR status != '99')";
-    $query = "SELECT * FROM set_project_expenses_detail WHERE code_expenses = '$id' $statusSql ORDER BY id ASC";
+    $query = "SELECT * FROM set_project_expenses_detail WHERE code_expenses = '$id' $statusSql ORDER BY sort_order ASC, id ASC";
     $result = mysqli_query($db_connection, $query);
 
     $expenses_list = [];
@@ -3676,7 +3868,7 @@ if (!function_exists('ensureSetExpensesDetailAttachSchema')) {
             return;
         }
         $done = true;
-        foreach (['attach_file' => 'VARCHAR(255) NULL DEFAULT NULL', 'attach_name' => 'VARCHAR(255) NULL DEFAULT NULL'] as $col => $type) {
+        foreach (['attach_file' => 'VARCHAR(255) NULL DEFAULT NULL', 'attach_name' => 'VARCHAR(255) NULL DEFAULT NULL', 'sort_order' => 'INT NOT NULL DEFAULT 0'] as $col => $type) {
             $esc = mysqli_real_escape_string($db_Project, $col);
             $q = @mysqli_query($db_Project, "SHOW COLUMNS FROM set_project_expenses_detail LIKE '$esc'");
             if ($q && mysqli_num_rows($q) === 0) {

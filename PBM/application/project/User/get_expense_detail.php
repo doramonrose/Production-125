@@ -8,7 +8,7 @@ $data = [];
 if ($code_expenses !== '') {
     $stmt = mysqli_prepare(
         $db_Project,
-        "SELECT * FROM set_project_expenses_detail WHERE code_expenses = ? AND status = '1' ORDER BY id ASC"
+        "SELECT * FROM set_project_expenses_detail WHERE code_expenses = ? AND status = '1' ORDER BY sort_order ASC, id ASC"
     );
     if ($stmt) {
         mysqli_stmt_bind_param($stmt, 's', $code_expenses);

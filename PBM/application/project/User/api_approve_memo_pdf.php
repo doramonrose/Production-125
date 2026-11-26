@@ -115,6 +115,13 @@ $PM_APPROVE_MEMO_PROJECT_ID = $projectId;
 $PM_APPROVE_MEMO_DATA = $built['data'];
 $GLOBALS['PM_APPROVE_MEMO_DATA'] = $PM_APPROVE_MEMO_DATA;
 
+// หากโครงการมีคำขอเปลี่ยนแปลงโครงการที่อนุมัติแล้ว ให้แนบบันทึกขออนุมัติเปลี่ยนแปลงโครงการต่อท้ายใน PDF ด้วย
+$changeMemos = function_exists('pm_build_approved_change_memo_payloads_from_db')
+	? pm_build_approved_change_memo_payloads_from_db($db_Project, $db_person ?? null, $projectId, $pre, $built['data'])
+	: [];
+$PM_APPROVE_MEMO_EXTRA_CHANGES = is_array($changeMemos) ? $changeMemos : [];
+$GLOBALS['PM_APPROVE_MEMO_EXTRA_CHANGES'] = $PM_APPROVE_MEMO_EXTRA_CHANGES;
+
 // ป้องกัน cache ของ PDF ระหว่างระบบภายนอก
 header('Cache-Control: private, no-store, no-cache, must-revalidate');
 header('Pragma: no-cache');
