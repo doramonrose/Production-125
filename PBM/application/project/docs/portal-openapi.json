@@ -1,0 +1,675 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Pharmacy CMU Portal Integration Standard — ระบบบริหารโครงการ (pbm_project)",
+    "version": "2026-11-23",
+    "description": "มาตรฐานหลักการเชื่อมต่อระบบบริหารโครงการ (pbm_project) กับ Pharmacy CMU Portal"
+  },
+  "servers": [
+    {
+      "url": "https://pbm.pharmacy.cmu.ac.th/application/project/api/portal"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "get_health",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Health" },
+                    "meta": { "$ref": "#/components/schemas/Meta" }
+                  },
+                  "required": ["data", "meta"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "429": { "$ref": "#/components/responses/ErrorResponse" },
+          "503": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/capabilities": {
+      "get": {
+        "operationId": "get_capabilities",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Capabilities" },
+                    "meta": { "$ref": "#/components/schemas/Meta" }
+                  },
+                  "required": ["data", "meta"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "429": { "$ref": "#/components/responses/ErrorResponse" },
+          "503": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/staff/{staffId}/records": {
+      "get": {
+        "operationId": "get_records",
+        "parameters": [
+          { "$ref": "#/components/parameters/StaffId" },
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Cursor" },
+          { "$ref": "#/components/parameters/SnapshotId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Record" } },
+                    "meta": { "$ref": "#/components/schemas/FeedMeta" }
+                  },
+                  "required": ["data", "meta"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "410": { "$ref": "#/components/responses/ErrorResponse" },
+          "422": { "$ref": "#/components/responses/ErrorResponse" },
+          "429": { "$ref": "#/components/responses/ErrorResponse" },
+          "503": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/staff/{staffId}/work-items": {
+      "get": {
+        "operationId": "get_work_items",
+        "parameters": [
+          { "$ref": "#/components/parameters/StaffId" },
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Cursor" },
+          { "$ref": "#/components/parameters/SnapshotId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/WorkItem" } },
+                    "meta": { "$ref": "#/components/schemas/FeedMeta" }
+                  },
+                  "required": ["data", "meta"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "410": { "$ref": "#/components/responses/ErrorResponse" },
+          "422": { "$ref": "#/components/responses/ErrorResponse" },
+          "429": { "$ref": "#/components/responses/ErrorResponse" },
+          "503": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/staff/{staffId}/events": {
+      "get": {
+        "operationId": "get_events",
+        "parameters": [
+          { "$ref": "#/components/parameters/StaffId" },
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Cursor" },
+          { "$ref": "#/components/parameters/SnapshotId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Event" } },
+                    "meta": { "$ref": "#/components/schemas/FeedMeta" }
+                  },
+                  "required": ["data", "meta"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "410": { "$ref": "#/components/responses/ErrorResponse" },
+          "422": { "$ref": "#/components/responses/ErrorResponse" },
+          "429": { "$ref": "#/components/responses/ErrorResponse" },
+          "503": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/staff/{staffId}/summary": {
+      "get": {
+        "operationId": "get_summary",
+        "parameters": [
+          { "$ref": "#/components/parameters/StaffId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Summary" },
+                    "meta": { "$ref": "#/components/schemas/Meta" }
+                  },
+                  "required": ["data", "meta"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "422": { "$ref": "#/components/responses/ErrorResponse" },
+          "429": { "$ref": "#/components/responses/ErrorResponse" },
+          "503": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/staff/{staffId}/records/{recordId}": {
+      "get": {
+        "operationId": "get_detail",
+        "parameters": [
+          { "$ref": "#/components/parameters/StaffId" },
+          {
+            "name": "recordId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 255 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Detail" },
+                    "meta": { "$ref": "#/components/schemas/Meta" }
+                  },
+                  "required": ["data", "meta"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "404": { "$ref": "#/components/responses/ErrorResponse" },
+          "422": { "$ref": "#/components/responses/ErrorResponse" },
+          "429": { "$ref": "#/components/responses/ErrorResponse" },
+          "503": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/staff/{staffId}/work-items/{workItemId}/actions": {
+      "post": {
+        "operationId": "perform_action",
+        "parameters": [
+          { "$ref": "#/components/parameters/StaffId" },
+          {
+            "name": "workItemId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 255 }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 255 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": { "type": "string", "enum": ["approve", "return", "reject", "complete", "acknowledge"] },
+                  "note": { "type": "string", "maxLength": 1000 },
+                  "expected_revision": { "type": "integer", "minimum": 1 }
+                },
+                "required": ["action", "note", "expected_revision"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Committed result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "record": { "$ref": "#/components/schemas/Record" },
+                        "work_item": { "$ref": "#/components/schemas/WorkItem" }
+                      },
+                      "required": ["record", "work_item"],
+                      "additionalProperties": false
+                    },
+                    "meta": { "$ref": "#/components/schemas/Meta" }
+                  },
+                  "required": ["data", "meta"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "403": { "$ref": "#/components/responses/ErrorResponse" },
+          "404": { "$ref": "#/components/responses/ErrorResponse" },
+          "409": { "$ref": "#/components/responses/ErrorResponse" },
+          "422": { "$ref": "#/components/responses/ErrorResponse" },
+          "503": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer" }
+    },
+    "parameters": {
+      "StaffId": {
+        "name": "staffId",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "pattern": "^[0-9]{1,20}$" }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }
+      },
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "schema": { "type": "string" }
+      },
+      "SnapshotId": {
+        "name": "snapshot_id",
+        "in": "query",
+        "schema": { "type": "string" }
+      }
+    },
+    "responses": {
+      "ErrorResponse": {
+        "description": "Error envelope",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Meta": {
+        "type": "object",
+        "properties": {
+          "generated_at": { "type": "string", "format": "date-time" },
+          "request_id": { "type": "string" }
+        },
+        "required": ["generated_at", "request_id"],
+        "additionalProperties": false
+      },
+      "FeedMeta": {
+        "type": "object",
+        "properties": {
+          "generated_at": { "type": "string", "format": "date-time" },
+          "request_id": { "type": "string" },
+          "next_cursor": { "type": ["string", "null"] },
+          "snapshot_id": { "type": ["string", "null"] }
+        },
+        "required": ["generated_at", "request_id", "next_cursor", "snapshot_id"],
+        "additionalProperties": false
+      },
+      "Health": {
+        "type": "object",
+        "properties": {
+          "system": { "type": "string" },
+          "state": { "const": "ready" }
+        },
+        "required": ["system", "state"],
+        "additionalProperties": false
+      },
+      "Capabilities": {
+        "type": "object",
+        "properties": {
+          "actions": { "type": "boolean" }
+        },
+        "required": ["actions"],
+        "additionalProperties": false
+      },
+      "Record": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "reference_no": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "subject": { "type": "string", "minLength": 1 },
+          "requester": {
+            "type": "object",
+            "properties": {
+              "staff_id": { "type": ["string", "null"], "pattern": "^[0-9]{1,20}$" },
+              "display_name": { "type": "string" }
+            },
+            "required": ["staff_id", "display_name"],
+            "additionalProperties": false
+          },
+          "state": {
+            "type": "string",
+            "enum": ["draft", "submitted", "under_review", "approved", "in_execution", "completed", "rejected", "cancelled"]
+          },
+          "current_step": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": { "type": "string" },
+                  "label": { "type": "string" }
+                },
+                "required": ["code", "label"],
+                "additionalProperties": false
+              },
+              { "type": "null" }
+            ]
+          },
+          "submitted_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "revision": { "type": "integer", "minimum": 1 },
+          "detail_url": { "type": "string", "format": "uri", "pattern": "^https://" },
+          "source_state": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "string" },
+              "label": { "type": "string" }
+            },
+            "required": ["code", "label"],
+            "additionalProperties": false
+          },
+          "period": {
+            "type": ["object", "null"],
+            "required": ["start", "end"],
+            "properties": {
+              "start": { "type": "string", "anyOf": [{"format": "date"}, {"format": "date-time"}] },
+              "end": { "type": "string", "anyOf": [{"format": "date"}, {"format": "date-time"}] }
+            },
+            "additionalProperties": false
+          },
+          "location": { "type": ["string", "null"], "maxLength": 255 },
+          "participants": {
+            "type": ["array", "null"],
+            "items": { "type": "string", "pattern": "^[0-9]{1,20}$" }
+          },
+          "periods": {
+            "type": ["array", "null"],
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "required": ["start", "end"],
+              "properties": {
+                "start": { "type": "string", "anyOf": [{"format": "date"}, {"format": "date-time"}] },
+                "end": { "type": "string", "anyOf": [{"format": "date"}, {"format": "date-time"}] }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["id", "reference_no", "subject", "requester", "state", "current_step", "submitted_at", "updated_at", "revision", "detail_url"],
+        "additionalProperties": false
+      },
+      "WorkItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "record_id": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "assignee": {
+            "type": "object",
+            "properties": {
+              "staff_id": { "type": "string", "pattern": "^[0-9]{1,20}$" }
+            },
+            "required": ["staff_id"],
+            "additionalProperties": false
+          },
+          "type": { "type": "string", "enum": ["review", "correct", "verify", "pay", "reconcile", "acknowledge"] },
+          "state": { "type": "string", "enum": ["pending", "in_progress", "completed", "cancelled"] },
+          "assigned_at": { "type": "string", "format": "date-time" },
+          "due_at": { "type": ["string", "null"], "format": "date-time" },
+          "priority": { "type": "string", "enum": ["low", "normal", "high", "critical"] },
+          "allowed_actions": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["approve", "return", "reject", "complete", "acknowledge"] }
+          },
+          "revision": { "type": "integer", "minimum": 1 },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "title": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "action_url": { "type": ["string", "null"], "format": "uri", "pattern": "^https://" }
+        },
+        "required": ["id", "record_id", "assignee", "type", "state", "assigned_at", "due_at", "priority", "allowed_actions", "revision", "updated_at"],
+        "additionalProperties": false
+      },
+      "Event": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "record_id": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "work_item_id": { "type": ["string", "null"] },
+          "type": { "type": "string", "enum": ["submitted", "assigned", "started", "approved", "returned", "rejected", "paid", "reconciled", "completed", "cancelled", "access_revoked"] },
+          "actor": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "staff_id": { "type": "string", "pattern": "^[0-9]{1,20}$" },
+                  "display_name": { "type": "string" }
+                },
+                "required": ["staff_id", "display_name"],
+                "additionalProperties": false
+              },
+              { "type": "null" }
+            ]
+          },
+          "occurred_at": { "type": "string", "format": "date-time" },
+          "message": { "type": "string" },
+          "recipients": {
+            "type": "array",
+            "items": { "type": "string", "pattern": "^[0-9]{1,20}$" }
+          }
+        },
+        "required": ["id", "record_id", "work_item_id", "type", "actor", "occurred_at", "message", "recipients"],
+        "additionalProperties": false
+      },
+      "Field": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string", "minLength": 1, "maxLength": 255 },
+              "label": { "type": "string" },
+              "type": { "const": "text" },
+              "value": { "oneOf": [{ "type": "string" }, { "type": "null" }] }
+            },
+            "required": ["key", "label", "type", "value"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string", "minLength": 1, "maxLength": 255 },
+              "label": { "type": "string" },
+              "type": { "const": "date" },
+              "value": { "oneOf": [{ "type": "string", "format": "date" }, { "type": "null" }] }
+            },
+            "required": ["key", "label", "type", "value"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string", "minLength": 1, "maxLength": 255 },
+              "label": { "type": "string" },
+              "type": { "const": "datetime" },
+              "value": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] }
+            },
+            "required": ["key", "label", "type", "value"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string", "minLength": 1, "maxLength": 255 },
+              "label": { "type": "string" },
+              "type": { "const": "date_range" },
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "start": { "type": "string", "format": "date" },
+                      "end": { "type": "string", "format": "date" }
+                    },
+                    "required": ["start", "end"],
+                    "additionalProperties": false
+                  },
+                  { "type": "null" }
+                ]
+              }
+            },
+            "required": ["key", "label", "type", "value"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string", "minLength": 1, "maxLength": 255 },
+              "label": { "type": "string" },
+              "type": { "const": "money" },
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "amount": { "type": "string", "pattern": "^-?\\d+\\.\\d{2}$" },
+                      "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
+                    },
+                    "required": ["amount", "currency"],
+                    "additionalProperties": false
+                  },
+                  { "type": "null" }
+                ]
+              }
+            },
+            "required": ["key", "label", "type", "value"],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "Detail": {
+        "type": "object",
+        "properties": {
+          "record": { "$ref": "#/components/schemas/Record" },
+          "work_items": { "type": "array", "items": { "$ref": "#/components/schemas/WorkItem" } },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": { "type": "string", "minLength": 1, "maxLength": 255 },
+                "title": { "type": "string" },
+                "fields": { "type": "array", "items": { "$ref": "#/components/schemas/Field" } }
+              },
+              "required": ["key", "title", "fields"],
+              "additionalProperties": false
+            }
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "minLength": 1, "maxLength": 255 },
+                "name": { "type": "string" },
+                "url": { "type": "string", "format": "uri", "pattern": "^https://" },
+                "mime_type": { "type": "string" }
+              },
+              "required": ["id", "name", "url", "mime_type"],
+              "additionalProperties": false
+            }
+          },
+          "events": { "type": "array", "items": { "$ref": "#/components/schemas/Event" } }
+        },
+        "required": ["record", "work_items", "sections", "attachments", "events"],
+        "additionalProperties": false
+      },
+      "Summary": {
+        "type": "object",
+        "properties": {
+          "pending_work": { "type": "integer", "minimum": 0 },
+          "in_progress_work": { "type": "integer", "minimum": 0 },
+          "overdue_work": { "type": "integer", "minimum": 0 },
+          "as_of": { "type": "string", "format": "date-time" }
+        },
+        "required": ["pending_work", "in_progress_work", "overdue_work", "as_of"],
+        "additionalProperties": false
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" },
+              "request_id": { "type": "string" }
+            },
+            "required": ["code", "message", "request_id"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["error"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

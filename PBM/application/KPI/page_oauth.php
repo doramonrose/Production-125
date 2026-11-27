@@ -57,6 +57,11 @@ if ($n_num = mysqli_num_rows($result)) {
 		$dest = $projectSide === 'plan'
 			? '/application/project/Plan/page.php'
 			: '/application/project/User/page.php';
+		$portalRet = isset($_SESSION['pbm_portal_return_url']) ? trim((string)$_SESSION['pbm_portal_return_url']) : '';
+		unset($_SESSION['pbm_portal_return_url']);
+		if ($portalRet !== '' && preg_match('#^/application/project/portal/records/[A-Za-z0-9._%-]+(?:/work|/attachments/[A-Za-z0-9._%-]+)?$#', $portalRet)) {
+			$dest = $portalRet;
+		}
 		header('Location: ' . $dest);
 		exit();
 	}
